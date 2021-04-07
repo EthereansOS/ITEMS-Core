@@ -2,7 +2,7 @@
 
 pragma solidity ^0.6.0;
 
-import "eth-item-token-standard/IEthItemMainInterface.sol";
+import "../../eth-item-token-standard/IEthItemMainInterface.sol";
 
 /**
  * @dev This interface contains the commonn data provided by all the EthItem models

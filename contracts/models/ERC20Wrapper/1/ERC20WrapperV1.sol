@@ -4,7 +4,7 @@ pragma solidity ^0.6.0;
 
 import "./IERC20WrapperV1.sol";
 import "../../common/EthItemModelBase.sol";
-import "eth-item-token-standard/IERC20Data.sol";
+import "../../../eth-item-token-standard/IERC20Data.sol";
 
 contract ERC20WrapperV1 is IERC20WrapperV1, EthItemModelBase {
 

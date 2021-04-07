@@ -8,7 +8,7 @@ import "../knowledgeBase/IKnowledgeBase.sol";
 import "../ens-controller/IENSController.sol";
 import "@openzeppelin/contracts/introspection/ERC165.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "eth-item-token-standard/IEthItemMainInterface.sol";
+import "../eth-item-token-standard/IEthItemMainInterface.sol";
 import "../models/common/IEthItemModelBase.sol";
 
 contract EthItemOrchestrator is IEthItemOrchestrator, ERC165 {

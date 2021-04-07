@@ -57,7 +57,7 @@ describe("EthItem", () => {
         W1155 = await compile(prefix + "models/ERC1155Wrapper/1/ERC1155WrapperV1");
         W721 = await compile(prefix + "models/ERC721Wrapper/1/ERC721WrapperV1");
 
-        InteroperableInterface = await compile('../node_modules/eth-item-token-standard/EthItemInteroperableInterface');
+        InteroperableInterface = await compile('eth-item-token-standard/EthItemInteroperableInterface');
 
         native = native || await new web3.eth.Contract(Native.abi).deploy({ data: Native.bin }).send(blockchainConnection.getSendingOptions());
         w20 = await new web3.eth.Contract(W20.abi).deploy({ data: W20.bin }).send(blockchainConnection.getSendingOptions());

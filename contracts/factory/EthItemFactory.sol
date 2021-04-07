@@ -6,7 +6,7 @@ import "./IEthItemFactory.sol";
 import "../models/common/IEthItemModelBase.sol";
 
 import "../orchestrator/EthItemOrchestratorDependantElement.sol";
-import "eth-item-token-standard/IEthItemInteroperableInterface.sol";
+import "../eth-item-token-standard/IEthItemInteroperableInterface.sol";
 
 contract EthItemFactory is IEthItemFactory, EthItemOrchestratorDependantElement {
 

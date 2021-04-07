@@ -3,7 +3,7 @@
 pragma solidity ^0.6.0;
 
 import "./IEthItemModelBase.sol";
-import "eth-item-token-standard/EthItemMainInterface.sol";
+import "../../eth-item-token-standard/EthItemMainInterface.sol";
 import "../../factory/IEthItemFactory.sol";
 
 abstract contract EthItemModelBase is IEthItemModelBase, EthItemMainInterface(address(0), "", "") {
