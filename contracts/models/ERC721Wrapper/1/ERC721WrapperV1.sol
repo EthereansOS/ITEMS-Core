@@ -24,6 +24,10 @@ contract ERC721WrapperV1 is IERC721WrapperV1, EthItemModelBase {
         _registerInterface(this.onERC721Received.selector);
     }
 
+    function modelVersion() public override(IEthItemModelBase, EthItemModelBase) virtual pure returns(uint256) {
+        return 2;
+    }
+
     function source() public override view returns (address) {
         return _source;
     }
@@ -71,7 +75,8 @@ contract ERC721WrapperV1 is IERC721WrapperV1, EthItemModelBase {
         uint256 objectId,
         uint256 amount
     ) internal virtual override returns(uint256, uint256) {
-        super._burn(objectId, amount);
+        (uint256 ret, uint256 fee) = super._burn(objectId, amount);
+        require(toMainInterfaceAmount(objectId, ret + fee) == 1, "Invalid amount");
         IERC721(_source).safeTransferFrom(address(this), msg.sender, objectId, "");
     }
 
