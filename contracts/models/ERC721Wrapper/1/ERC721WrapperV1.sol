@@ -19,13 +19,13 @@ contract ERC721WrapperV1 is IERC721WrapperV1, EthItemModelBase {
     ) public virtual override(IEthItemMainInterface, EthItemModelBase) {
         require(source != address(0), "Source cannot be void");
         _source = source;
-        super.init(name, symbol);
+        super.init(string(abi.encodePacked(name, " item")), string(abi.encodePacked("i", symbol)));
         _idAsName = keccak256(bytes(name)) == keccak256(bytes(_toString(_source)));
         _registerInterface(this.onERC721Received.selector);
     }
 
     function modelVersion() public override(IEthItemModelBase, EthItemModelBase) virtual pure returns(uint256) {
-        return 2;
+        return 3;
     }
 
     function source() public override view returns (address) {
@@ -88,7 +88,7 @@ contract ERC721WrapperV1 is IERC721WrapperV1, EthItemModelBase {
         if (wrapperAddress == address(0)) {
             (address interoperableInterfaceModelAddress,) = interoperableInterfaceModel();
             _isMine[_dest[objectId] = wrapperAddress = _clone(interoperableInterfaceModelAddress)] = true;
-            string memory name = _idAsName ? _toString(objectId) : _name;
+            string memory name = _idAsName ? string(abi.encodePacked(_toString(objectId), " item")) : _name;
             IEthItemInteroperableInterface(wrapperAddress).init(objectId, name, _symbol, _decimals);
             emit NewItem(objectId, wrapperAddress);
         }

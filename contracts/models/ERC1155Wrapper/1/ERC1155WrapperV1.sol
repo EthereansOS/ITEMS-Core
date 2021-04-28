@@ -30,11 +30,15 @@ contract ERC1155WrapperV1 is IERC1155WrapperV1, EthItemModelBase {
         _supportsSpecificSymbol = supportsSpecificSymbol;
         _supportsSpecificDecimals = supportsSpecificDecimals;
         _idAsName = keccak256(bytes(name)) == keccak256(bytes(_toString(_source)));
-        return super.init(name, symbol);
+        return super.init(string(abi.encodePacked(name, " item")), string(abi.encodePacked("i", symbol)));
     }
 
     function source() public view virtual override returns (address) {
         return _source;
+    }
+
+    function modelVersion() public override(IEthItemModelBase, EthItemModelBase) virtual pure returns(uint256) {
+        return 2;
     }
 
     function decimals(uint256 objectId)
@@ -175,8 +179,8 @@ contract ERC1155WrapperV1 is IERC1155WrapperV1, EthItemModelBase {
             uint256 dec
         )
     {
-        name = _supportsSpecificName ? IERC1155Views(_source).name(objectId) : _name;
-        symbol = _supportsSpecificSymbol ? IERC1155Views(_source).symbol(objectId) : _symbol;
+        name = _supportsSpecificName ? string(abi.encodePacked(IERC1155Views(_source).name(objectId), " item")) : _name;
+        symbol = _supportsSpecificSymbol ? string(abi.encodePacked("i", IERC1155Views(_source).symbol(objectId))) : _symbol;
         dec = _supportsSpecificDecimals ? IERC1155Views(_source).decimals(objectId) : _decimals;
     }
 
