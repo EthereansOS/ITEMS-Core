@@ -9,10 +9,17 @@ async function main() {
         glob(baseLocation + '/**/*.sol', {}, (err, files) => end(files.map(it => it.split('\\').join('/').split(baseLocation).join('').substring(1))));
     });
     var abis = "";
+    var contracts = {}
     for(var i in files) {
         var file = files[i = parseInt(i)];
         var name = file.substring(file.lastIndexOf("/") + 1).split(".sol").join("") + "ABI";
-        abis += `\n    "${name}": ${JSON.stringify((await compile(file)).abi)}${i === files.length - 1 ? '' : ','}`
+        if(contracts[name]) {
+            continue;
+        }
+        try {
+            abis += `\n    "${name}": ${JSON.stringify(contracts[name] = (await compile(file)).abi)}${i === files.length - 1 ? '' : ','}`
+        } catch(e) {
+        }
     }
     var data = path.resolve(__dirname, '..', 'data');
     try {

@@ -16,3 +16,4 @@
 /**/.env
 /**/*.env
 /**/contracts_old
+/**/yarn.lock

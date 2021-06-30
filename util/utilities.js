@@ -9,6 +9,8 @@ if (!String.prototype.format) {
 
 var voidEthereumAddress = "0x0000000000000000000000000000000000000000";
 
+var voidBytes32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
 global.formatMoneyDecPlaces = 4;
 
 function fromDecimals(n, d, noFormat) {
@@ -20,15 +22,15 @@ function fromDecimals(n, d, noFormat) {
     var decimals = (typeof d).toLowerCase() === 'string' ? parseInt(d) : d;
     var symbol = toEthereumSymbol(decimals);
     if (symbol) {
-        var result = web3.utils.fromWei((typeof n).toLowerCase() === 'string' ? n : numberToString(n), symbol);
+        var result = web3.utils.fromWei(((typeof n).toLowerCase() === 'string' ? n : numberToString(n)).split('.')[0], symbol);
         return noFormat === true ? result : formatMoney(result);
     }
     var number = (typeof n).toLowerCase() === 'string' ? parseInt(n) : n;
-    if (!number || this.isNaN(number)) {
+    if (!number || isNaN(number)) {
         return '0';
     }
     var nts = parseFloat(numberToString((number / (decimals < 2 ? 1 : Math.pow(10, decimals)))));
-    nts = numberToString(Math.round(nts * 100) / 100);
+    nts = numberToString(nts);
     return noFormat === true ? nts : formatMoney(nts);
 }
 
@@ -43,9 +45,9 @@ function toDecimals(n, d) {
     if (symbol) {
         return web3.utils.toWei((typeof n).toLowerCase() === 'string' ? n : numberToString(n), symbol);
     }
-    var number = (typeof n).toLowerCase() === 'string' ? parseInt(n) : n;
-    if (!number || this.isNaN(number)) {
-        return 0;
+    var number = (typeof n).toLowerCase() === 'string' ? parseFloat(n) : n;
+    if (!number || isNaN(number)) {
+        return "0";
     }
     return numberToString(number * (decimals < 2 ? 1 : Math.pow(10, decimals)));
 }
@@ -83,6 +85,10 @@ function numberToString(num, locale) {
     return numStr;
 }
 
+function normalizeValue(amount, decimals) {
+    return web3.utils.toBN(amount).mul(web3.utils.toBN(10 ** (18 - decimals))).toString();
+}
+
 function formatMoney(value, decPlaces, thouSeparator, decSeparator) {
     value = (typeof value).toLowerCase() !== 'number' ? parseFloat(value) : value;
     var n = value,
@@ -100,6 +106,14 @@ function formatNumber(value) {
     return parseFloat(numberToString(value).split(',').join(''));
 }
 
+function getRandomArrayIndex(array) {
+    return Math.floor(Math.random() * array.length);
+}
+
+function getRandomArrayElement(array) {
+    return array[getRandomArrayIndex(array)];
+}
+
 function eliminateFloatingFinalZeroes(value, decSeparator) {
     decSeparator = decSeparator || '.';
     if (value.indexOf(decSeparator) === -1) {
@@ -111,6 +125,72 @@ function eliminateFloatingFinalZeroes(value, decSeparator) {
     }
     return split[1].length === 0 ? split[0] : split.join(decSeparator);
 }
+
+function sleep(millis) {
+    return new Promise(function(ok) {
+        setTimeout(ok, millis || 300);
+    });
+}
+
+global.op = function op(a, operator, b) {
+    var operations = {
+        '+' : 'add',
+        '-' : 'sub',
+        '*' : 'mul',
+        '/' : 'div'
+    };
+    a = (a.add ? a.toString() : numberToString(a)).split(',').join('').split('.')[0];
+    b = (b.add ? b.toString() : numberToString(b)).split(',').join('').split('.')[0];
+    return web3.utils.toBN(a)[operations[operator] || operator](web3.utils.toBN(b)).toString();
+}
+
+global.add = function add(a, b) {
+    return op(a, '+', b);
+}
+
+global.sub = function sub(a, b) {
+    return op(a, '-', b);
+}
+
+global.mul = function mul(a, b) {
+    return op(a, '*', b);
+}
+
+global.div = function div(a, b) {
+    return op(a, '/', b);
+}
+
+String.prototype.add = String.prototype.add || function add(b) {
+    return op(this, '+', b);
+};
+
+String.prototype.sub = function sub(b) {
+    return op(this, '-', b);
+};
+
+String.prototype.mul = String.prototype.mul || function mul(b) {
+    return op(this, '*', b);
+};
+
+String.prototype.div = String.prototype.div || function div(b) {
+    return op(this, '/', b);
+};
+
+Number.prototype.add = Number.prototype.add || function add(b) {
+    return op(this, '+', b);
+};
+
+Number.prototype.sub = Number.prototype.sub || function sub(b) {
+    return op(this, '-', b);
+};
+
+Number.prototype.mul = Number.prototype.mul || function mul(b) {
+    return op(this, '*', b);
+};
+
+Number.prototype.div = Number.prototype.div || function div(b) {
+    return op(this, '/', b);
+};
 
 function toEthereumSymbol(decimals) {
     var symbols = {
@@ -154,11 +234,21 @@ function toEthereumSymbol(decimals) {
 
 module.exports = {
     voidEthereumAddress,
+    voidBytes32,
     fromDecimals,
     toDecimals,
     numberToString,
     formatNumber,
     formatMoney,
     eliminateFloatingFinalZeroes,
-    toEthereumSymbol
+    toEthereumSymbol,
+    sleep,
+    normalizeValue,
+    getRandomArrayIndex,
+    getRandomArrayElement,
+    op,
+    add,
+    sub,
+    mul,
+    div
 }

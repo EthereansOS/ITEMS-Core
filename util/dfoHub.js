@@ -15,7 +15,7 @@ contract ProposalCode {
 
     string private _metadataLink;
 
-    constructor(string memory metadataLink) public {
+    constructor(string memory metadataLink) {
         _metadataLink = metadataLink;
     }
 

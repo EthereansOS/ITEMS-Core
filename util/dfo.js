@@ -33,7 +33,7 @@ async function createDFO(name, symbol, totalSupplyPlain, proposalLength, hardCap
     payload = web3.eth.abi.encodeParameters(['address', 'uint256'], [utilities.voidEthereumAddress, 0]);
     response = await dfoHub.methods.submit('deployProposalsManager', payload).send(blockchainConnection.getSendingOptions());
     response = formatDFOLogs(response.events.Event, "DFOCollateralContractsCloned(address_indexed,address,address,address)").raw.data;
-    data.mvdFunctionalityProposalManagerAddress = response[0];
+    data.proposalManagerAddress = response[0];
     data.mvdWalletAddress = response[1];
     data.doubleProxyAddress = response[2];
 
@@ -57,7 +57,7 @@ async function createDFO(name, symbol, totalSupplyPlain, proposalLength, hardCap
         utilities.voidEthereumAddress,
         0,
         data.votingTokenAddress,
-        data.mvdFunctionalityProposalManagerAddress,
+        data.ProposalManagerAddress,
         data.stateHolderAddress,
         data.functionaltyModelsManagerAddress,
         data.functionalitiesManagerAddress,
