@@ -57,6 +57,12 @@ contract ItemInteroperableInterface is IItemInteroperableInterface {
         emit Transfer(msg.sender, address(0), amount);
     }
 
+    function burnFrom(address account, uint256 amount) external override {
+        require(account != address(0), "burn zero address");
+        IItemMainInterface(mainInterface).mintTransferOrBurn(false, abi.encode(msg.sender, account, address(0), itemId(), amount));
+        emit Transfer(msg.sender, address(0), amount);
+    }
+
     function name() override external view returns (string memory) {
         (, Header memory header,,) = IItemMainInterface(mainInterface).item(itemId());
         return header.name;

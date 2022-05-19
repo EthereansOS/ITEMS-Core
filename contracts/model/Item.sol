@@ -27,6 +27,7 @@ interface Item is IERC1155, IERC1155Views {
 
     function name() external view returns(string memory);
     function symbol() external view returns(string memory);
+    function decimals() external view returns(uint256);
 
     function burn(address account, uint256 itemId, uint256 amount) external;
     function burnBatch(address account, uint256[] calldata itemIds, uint256[] calldata amounts) external;
@@ -36,7 +37,7 @@ interface Item is IERC1155, IERC1155Views {
 
     function mintItems(CreateItem[] calldata items) external returns(uint256[] memory itemIds);
     function setItemsCollection(uint256[] calldata itemIds, bytes32[] calldata collectionIds) external returns(bytes32[] memory oldCollectionIds);
-    function setItemsMetadata(uint256[] calldata itemIds, Header[] calldata amounts) external returns(Header[] memory oldValues);
+    function setItemsMetadata(uint256[] calldata itemIds, Header[] calldata newValues) external returns(Header[] memory oldValues);
 
     function interoperableOf(uint256 itemId) external view returns(address);
 }

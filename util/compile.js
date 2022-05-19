@@ -4,23 +4,26 @@ var fs = require("fs");
 var solidityManager = require('solc-vm/solc-manager');
 var solidityDownloader = require('solc-vm/solc-downloader');
 var glob = require("glob");
-var { exec } = require('child_process');
+var { spawn } = require('child_process');
 
-function cleanOutput(text) {
-    var lines = text.split('\n').join('').split('\r').join('').split('======= ');
+var baseLocation = path.resolve(__dirname, "..", "contracts").split("\\").join("/");
+
+async function parseOutput(text) {
+    var json = JSON.parse(text);
     var output = {};
-    for(line of lines) {
-        if(line === '') {
-            continue;
-        }
-        var split = line.split(' =======Binary:');
-        var file = split[0].substring(0, split[0].lastIndexOf(':'));
-        var contract = split[0].substring(split[0].lastIndexOf(':') + 1);
-        output[file] = output[file] || {};
-        output[file][contract] = output[file][contract] || {};
-        var data = split[1].split('Contract JSON ABI');
-        output[file][contract].bin = '0x' + data[0];
-        output[file][contract].abi = JSON.parse(data[1]);
+    for(var entry of Object.entries(json.contracts)) {
+        var location = entry[0].split('\\').join('/');
+        var contractName = location.split('\\').join('/').split('/');
+        contractName = contractName[contractName.length - 1].split(':')[1];
+        location = location.substring(0, location.lastIndexOf(':'));
+        var contract = {
+            ...entry[1],
+            contractName,
+        };
+        json.sources[location] && (contract.ast = json.sources[location].AST);
+        contract.abi = typeof contract.abi === 'string' ? JSON.parse(contract.abi) : contract.abi;
+        global.onCompilation && global.onCompilation(contract);
+        (output[location] = output[location] || {})[contractName] = contract;
     }
     return output;
 }
@@ -51,37 +54,66 @@ var importedNodeModulesContracts = new Promise(async function(ok) {
             end();
         });
     });
-    return ok(Object.keys(locations).map(it => `${it}=${nodeModulesLocation}/${it}`).join(' '));
+    return ok(Object.keys(locations).map(it => `${it}=${nodeModulesLocation}/${it}`));
 });
 
-module.exports = async function compile(file, contractName) {
-    if (!solidityManager.hasBinaryVersion(solidityVersion)) {
+module.exports = async function compile(file, contractName, solidityVersion) {
+    if (!solidityManager.hasBinaryVersion(solidityVersion = solidityVersion || global.solidityVersion)) {
         await new Promise(ok => solidityDownloader.downloadBinary(solidityVersion, ok));
     }
-    var baseLocation = path.resolve(__dirname, "..", "contracts").split("\\").join("/");
     var fileLocation = (file + (file.indexOf(".sol") === -1 ? ".sol" : "")).split("\\").join("/");
-    contractName = contractName || fileLocation.substring(fileLocation.lastIndexOf("/") + 1).split(".sol").join("");
 
     var location = path.resolve(baseLocation, fileLocation).split("\\").join("/");
     var removeAtEnd = !fs.existsSync(location);
+
+    contractName = contractName ? contractName : !fs.existsSync(location) ? "Contract" : location.substring(location.lastIndexOf("/") + 1).split(".sol").join("");
+
     removeAtEnd && fs.writeFileSync(location = path.join(os.tmpdir(), `${contractName}_${new Date().getTime()}.sol`).split('\\').join('/'), file);
 
     return await new Promise(async function(ok, ko) {
-        exec(`${solidityManager.getBinary(solidityVersion)} ${await importedNodeModulesContracts} --optimize --abi --bin --allow-paths ${baseLocation} ${location}`, (error, stdout, stderr) => {
+        var exeFile = solidityManager.getBinary(solidityVersion);
+        var args = [
+            ...(await importedNodeModulesContracts),
+            '--optimize',
+            '--combined-json',
+            'abi,ast,bin,bin-runtime,srcmap,srcmap-runtime',
+            '--allow-paths',
+            baseLocation,
+            location
+        ];
+        var child;
+        try {
+            child = spawn(exeFile, args);
+        } catch(e) {
+            return ko(e);
+        }
+
+        var stderr  = '';
+        var stdout = '';
+
+        child.stdout.on('data', function (data) {
+            stdout += data;
+        });
+
+        child.stderr.on('data', function (data) {
+            stderr += data;
+        });
+
+        child.on('close', async function () {
+            var output;
+            try {
+                output = (await parseOutput(stdout))[location][contractName];
+            } catch(e) {
+            }
             try {
                 removeAtEnd && fs.unlinkSync(location);
             } catch(e) {
             }
-            if (error) {
-                return ko(error);
-            }
             if (stderr && stderr.toLowerCase().indexOf('warning: ') === -1) {
-                return ko(stderr);
+                return ko(new Error(stderr));
             }
-            var output = cleanOutput(stdout)[location][contractName];
             if(!output) {
-                stderr && console.log(stderr);
-                return ko(new Error("No output"));
+                return ko(new Error((stderr ? (stderr + '\n') : '') + "No output for contract " + contractName + " at location " + location + "."));
             }
             stderr && (output.warning = stderr);
             return ok(output);

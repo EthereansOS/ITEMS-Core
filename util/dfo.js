@@ -1,6 +1,6 @@
 var blockchainConnection = require("./blockchainConnection");
 var utilities = require("./utilities");
-var context = require("./context.json");
+var context = require("./knowledgeBase.json");
 var compile = require("./compile");
 
 async function createDFO(name, symbol, totalSupplyPlain, proposalLength, hardCapPlain, ensDomain) {
@@ -57,7 +57,7 @@ async function createDFO(name, symbol, totalSupplyPlain, proposalLength, hardCap
         utilities.voidEthereumAddress,
         0,
         data.votingTokenAddress,
-        data.ProposalManagerAddress,
+        data.proposalManagerAddress,
         data.stateHolderAddress,
         data.functionaltyModelsManagerAddress,
         data.functionalitiesManagerAddress,

@@ -13,5 +13,6 @@ interface IItemInteroperableInterface is IERC20, IERC20Metadata, IERC20Permit {
     function itemId() external view returns(uint256);
     function emitEvent(bool forApprove, bool isMulti, bytes calldata data) external;
     function burn(uint256 amount) external;
+    function burnFrom(address account, uint256 amount) external;
     function EIP712_PERMIT_DOMAINSEPARATOR_NAME_AND_VERSION() external view returns(string memory name, string memory version);
 }

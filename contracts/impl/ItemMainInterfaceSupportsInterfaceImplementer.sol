@@ -20,7 +20,8 @@ contract ItemMainInterfaceSupportsInterfaceImplementer is IERC165 {
             interfaceId == IItemMainInterface(address(0)).totalSupply.selector ||
             interfaceId == 0x00ad800c ||//name(uint256)
             interfaceId == 0x4e41a1fb ||//symbol(uint256)
-            interfaceId == IItemMainInterface(address(0)).decimals.selector ||
+            interfaceId == 0x3f47e662 ||//decimals(uint256)
+            interfaceId == 0x313ce567 ||//decimals()
             interfaceId == 0x0e89341c ||//uri(uint256)
             interfaceId == type(Item).interfaceId ||
             interfaceId == 0x06fdde03 ||//name()
@@ -35,11 +36,16 @@ contract ItemMainInterfaceSupportsInterfaceImplementer is IERC165 {
             interfaceId == IItemMainInterface(address(0)).interoperableOf.selector ||
             interfaceId == type(IItemMainInterface).interfaceId ||
             interfaceId == IItemMainInterface(address(0)).interoperableInterfaceModel.selector ||
+            interfaceId == 0xeac989f8 ||//uri()
+            interfaceId == IItemMainInterface(address(0)).plainUri.selector ||
+            interfaceId == IItemMainInterface(address(0)).dynamicUriResolver.selector ||
+            interfaceId == IItemMainInterface(address(0)).hostInitializer.selector ||
             interfaceId == IItemMainInterface(address(0)).collection.selector ||
             interfaceId == IItemMainInterface(address(0)).collectionUri.selector ||
             interfaceId == IItemMainInterface(address(0)).createCollection.selector ||
             interfaceId == IItemMainInterface(address(0)).setCollectionsMetadata.selector ||
             interfaceId == IItemMainInterface(address(0)).item.selector ||
+            interfaceId == IItemMainInterface(address(0)).setApprovalForAllByCollectionHost.selector ||
             interfaceId == IItemMainInterface(address(0)).mintTransferOrBurn.selector ||
             interfaceId == IItemMainInterface(address(0)).allowance.selector ||
             interfaceId == IItemMainInterface(address(0)).approve.selector ||

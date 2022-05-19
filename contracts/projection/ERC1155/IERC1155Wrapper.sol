@@ -10,4 +10,6 @@ interface IERC1155Wrapper is IItemProjection {
     event Token(address indexed tokenAddress, uint256 indexed tokenId, uint256 indexed itemId);
 
     function itemIdOf(address tokenAddress, uint256 tokenId) external view returns(uint256);
+
+    function source(uint256 itemId) external view returns(address tokenAddress, uint256 tokenId);
 }

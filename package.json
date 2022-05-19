@@ -5,10 +5,13 @@
   "main": "",
   "scripts": {
     "postinstall": "cross-var solc-vm install $npm_package_config_solidityVersion",
-    "flat": "node util/flat-contracts.js",
-    "abi": "node util/abi-extractor.js",
-    "compile": "npm run flat && npm run abi",
-    "test": "mocha"
+    "flat": "node util/contracts-flattener.js",
+    "compile": "node util/contracts-compiler.js",
+    "abi": "node util/contracts-compiler.js nobin",
+    "build": "yarn flat && yarn compile",
+    "test": "mocha",
+    "server": "node util/server.js",
+    "cli-compiler": "node util/cli-compiler.js projection/ERC1155/ERC1155Wrapper"
   },
   "config": {
     "solidityVersion": "0.8.6"
@@ -23,13 +26,13 @@
     "@ethereansos/swissknife": "git+https://github.com/EthereansOS/ethereansos-swissknife.git",
     "cross-var": "^1.1.0",
     "dotenv": "^8.2.0",
-    "ethers": "^5.0.26",
+    "ethers": "^5.4.7",
     "ganache-core": "^2.13.2",
     "glob": "^7.1.6",
     "memdown": "^5.1.0",
     "mocha": "^8.2.1",
+    "node-html-parser": "^4.1.5",
     "solc-vm": "https://gitpkg.now.sh/EthereansOS/Multiverse-Interface/solc-vm?master",
-    "truffle-flattener-wrapper": "https://gitpkg.now.sh/EthereansOS/Multiverse-Interface/truffle-flattener-wrapper?master",
-    "web3": "^1.3.3"
+    "truffle-flattener-wrapper": "https://gitpkg.now.sh/EthereansOS/Multiverse-Interface/truffle-flattener-wrapper?master"
   }
 }

@@ -5,12 +5,11 @@ pragma abicoder v2;
 
 import "../model/IItemMainInterface.sol";
 import "../model/IItemInteroperableInterface.sol";
-import "@ethereansos/swissknife/contracts/dynamicMetadata/impl/DynamicMetadataCapableElement.sol";
-import { ReflectionUtilities, BehaviorUtilities } from "@ethereansos/swissknife/contracts/lib/GeneralUtilities.sol";
+import "@ethereansos/swissknife/contracts/dynamicMetadata/model/IDynamicUriResolver.sol";
+import "@ethereansos/swissknife/contracts/factory/model/IFactory.sol";
 import "../util/ERC1155CommonLibrary.sol";
 
-contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement {
-    using ReflectionUtilities for address;
+contract ItemMainInterface is IItemMainInterface {
 
     bytes32 override public constant TYPEHASH_PERMIT = keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
@@ -31,57 +30,24 @@ contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement 
     mapping(bytes32 => mapping(uint256 => uint256)) private _batchAmounts;
     bytes32[] private _batchKeys;
 
-    constructor(bytes memory lazyInitData) DynamicMetadataCapableElement(lazyInitData) {
+    constructor(string memory _plainUri, address _dynamicUriResolver, bytes memory _interoperableInterfaceModel, bytes memory itemMainInterfaceSupportsInterfaceImplementerData) {
+        plainUri = _plainUri;
+        dynamicUriResolver = _dynamicUriResolver;
+        address created;
+        assembly {
+            created := create(0, add(_interoperableInterfaceModel, 0x20), mload(_interoperableInterfaceModel))
+        }
+        interoperableInterfaceModel = created;
+        created = address(0);
+        assembly {
+            created := create(0, add(itemMainInterfaceSupportsInterfaceImplementerData, 0x20), mload(itemMainInterfaceSupportsInterfaceImplementerData))
+        }
+        _itemMainInterfaceSupportsInterfaceImplementer = created;
+        hostInitializer = msg.sender;
     }
 
-    function _dynamicMetadataElementLazyInit(bytes memory lazyInitData) internal override returns(bytes memory) {
-        (interoperableInterfaceModel, _itemMainInterfaceSupportsInterfaceImplementer) = abi.decode(lazyInitData, (address, address));
-        return "";
-    }
-
-    function _dynamicMetadataElementSupportsInterface(bytes4 interfaceId) internal override view returns (bool) {
+    function supportsInterface(bytes4 interfaceId) external override view returns (bool) {
         return IERC165(_itemMainInterfaceSupportsInterfaceImplementer).supportsInterface(interfaceId);
-        /*return 
-            interfaceId == type(IERC1155).interfaceId ||
-            interfaceId == IItemMainInterface(address(0)).balanceOf.selector ||
-            interfaceId == IItemMainInterface(address(0)).balanceOfBatch.selector ||
-            interfaceId == IItemMainInterface(address(0)).setApprovalForAll.selector ||
-            interfaceId == IItemMainInterface(address(0)).isApprovedForAll.selector ||
-            interfaceId == IItemMainInterface(address(0)).safeTransferFrom.selector ||
-            interfaceId == IItemMainInterface(address(0)).safeBatchTransferFrom.selector ||
-            interfaceId == 0xd9b67a26 ||//OpenSea Standard
-            interfaceId == type(IERC1155Views).interfaceId ||
-            interfaceId == IItemMainInterface(address(0)).totalSupply.selector ||
-            interfaceId == 0x00ad800c ||//name(uint256)
-            interfaceId == 0x4e41a1fb ||//symbol(uint256)
-            interfaceId == IItemMainInterface(address(0)).decimals.selector ||
-            interfaceId == 0x0e89341c ||//uri(uint256)
-            interfaceId == type(Item).interfaceId ||
-            interfaceId == 0x06fdde03 ||//name()
-            interfaceId == 0x95d89b41 ||//symbol()
-            interfaceId == 0xf5298aca ||//burn(address,uint256,uint256)
-            interfaceId == 0x6b20c454 ||//burnBatch(address,uint256[],uint256[])
-            interfaceId == 0x8a94b05f ||//burn(address,uint256,uint256,bytes)
-            interfaceId == 0x5473422e ||//burnBatch(address,uint256[],uint256[],bytes)
-            interfaceId == IItemMainInterface(address(0)).mintItems.selector ||
-            interfaceId == IItemMainInterface(address(0)).setItemsCollection.selector ||
-            interfaceId == IItemMainInterface(address(0)).setItemsMetadata.selector ||
-            interfaceId == IItemMainInterface(address(0)).interoperableOf.selector ||
-            interfaceId == type(IItemMainInterface).interfaceId ||
-            interfaceId == IItemMainInterface(address(0)).interoperableInterfaceModel.selector ||
-            interfaceId == IItemMainInterface(address(0)).setInteroperableInterfaceModel.selector ||
-            interfaceId == IItemMainInterface(address(0)).collection.selector ||
-            interfaceId == IItemMainInterface(address(0)).collectionUri.selector ||
-            interfaceId == IItemMainInterface(address(0)).createCollection.selector ||
-            interfaceId == IItemMainInterface(address(0)).setCollectionsMetadata.selector ||
-            interfaceId == IItemMainInterface(address(0)).item.selector ||
-            interfaceId == IItemMainInterface(address(0)).mintTransferOrBurn.selector ||
-            interfaceId == IItemMainInterface(address(0)).allowance.selector ||
-            interfaceId == IItemMainInterface(address(0)).approve.selector ||
-            interfaceId == IItemMainInterface(address(0)).TYPEHASH_PERMIT.selector ||
-            interfaceId == IItemMainInterface(address(0)).EIP712_PERMIT_DOMAINSEPARATOR_NAME_AND_VERSION.selector ||
-            interfaceId == IItemMainInterface(address(0)).permit.selector ||
-            interfaceId == IItemMainInterface(address(0)).nonces.selector;*/
     }
 
     function name() override external pure returns(string memory) {
@@ -101,6 +67,10 @@ contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement 
     }
 
     function decimals(uint256) override external pure returns(uint256) {
+        return 18;
+    }
+
+    function decimals() external override pure returns(uint256) {
         return 18;
     }
 
@@ -172,16 +142,25 @@ contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement 
         emit ApprovalForAll(msg.sender, operator, approved);
     }
 
+    function setApprovalForAllByCollectionHost(bytes32 collectionId, address account, address operator, bool approved) external override {
+        require(msg.sender == collection[collectionId].host, "Unauthorized");
+        isApprovedForAll[account][operator] = approved;
+    }
+
     function interoperableOf(uint256 itemId) override external view returns(address) {
         return item[itemId].collectionId == bytes32(0) ? address(0) : address(uint160(itemId));
     }
 
     function safeTransferFrom(address from, address to, uint256 itemId, uint256 amount, bytes calldata data) override external {
+        require(from != address(0), "Zero address");
+        require(to != address(0), "Zero address");
         _mintTransferOrBurn(item[itemId], msg.sender, from, to, itemId, amount, true);
         ERC1155CommonLibrary.doSafeTransferAcceptanceCheck(msg.sender, from, to, itemId, amount, data);
     }
 
     function safeBatchTransferFrom(address from, address to, uint256[] calldata itemIds, uint256[] calldata amounts, bytes calldata data) override external {
+        require(from != address(0), "Zero address");
+        require(to != address(0), "Zero address");
         _mintTransferOrBurn(msg.sender, from, to, itemIds, amounts, false, true);
         ERC1155CommonLibrary.doSafeBatchTransferAcceptanceCheck(msg.sender, from, to, itemIds, amounts, data);
     }
@@ -195,15 +174,17 @@ contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement 
     }
 
     function burn(address account, uint256 itemId, uint256 amount, bytes memory) override public {
+        require(account != address(0), "Zero address");
         _mintTransferOrBurn(item[itemId], msg.sender, account, address(0), itemId, amount, true);
     }
 
     function burnBatch(address account, uint256[] calldata itemIds, uint256[] calldata amounts, bytes memory) override public {
+        require(account != address(0), "Zero address");
         _mintTransferOrBurn(msg.sender, account, address(0), itemIds, amounts, false, true);
     }
 
     function createCollection(Header calldata _collection, CreateItem[] calldata items) override external returns(bytes32 collectionId, uint256[] memory itemIds) {
-        Header storage storageCollection = (collection[collectionId = BehaviorUtilities.randomKey(_keyIndex++)] = _validateHeader(_collection, bytes32(0)));
+        Header storage storageCollection = (collection[collectionId = _randomKey(_keyIndex++)] = _validateHeader(_collection, bytes32(0)));
         require(storageCollection.host != address(0) || items.length > 0, "Empty");
         emit Collection(address(0), storageCollection.host, collectionId);
         itemIds = _createOrMintItems(collectionId, items);
@@ -262,6 +243,7 @@ contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement 
         require(!_stringIsEmpty(header.symbol = _stringIsEmpty(header.symbol) && collectionId != bytes32(0) ? collection[collectionId].symbol : header.symbol), "symbol");
         require(!_stringIsEmpty(header.uri = _stringIsEmpty(header.uri) && collectionId != bytes32(0) ? collection[collectionId].uri : header.uri), "uri");
         header.host = collectionId != bytes32(0) ? address(0) : header.host;
+        require(header.host == address(0) || IFactory(hostInitializer).deployer(header.host) != address(0), "Invalid Host");
         return header;
     }
 
@@ -273,7 +255,7 @@ contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement 
             itemToCreate.collectionId = createdCollectionId != bytes32(0) ? createdCollectionId : itemToCreate.id != 0 ? item[itemToCreate.id].collectionId : itemToCreate.collectionId;
             require(createdCollectionId != bytes32(0) || (itemToCreate.collectionId != bytes32(0) && msg.sender == collection[itemToCreate.collectionId].host), "Unauthorized");
             if(itemIds[i] == 0) {
-                address interoperableInterfaceAddress = interoperableInterfaceModel.clone();
+                address interoperableInterfaceAddress = _clone(interoperableInterfaceModel);
                 IItemInteroperableInterface(interoperableInterfaceAddress).init();
                 ItemData storage newItem = item[itemIds[i] = uint160(interoperableInterfaceAddress)];
                 newItem.collectionId = itemToCreate.collectionId;
@@ -450,10 +432,39 @@ contract ItemMainInterface is IItemMainInterface, DynamicMetadataCapableElement 
         delete _batchKeys;
     }
 
-    function _subjectIsAuthorizedFor(address, address location, bytes4 selector, bytes calldata, uint256) internal virtual override view returns(bool, bool) {
-        if(location == address(this) && selector == this.setDynamicUriResolver.selector) {
-            return (true, false);
+    address public override hostInitializer;
+    string public override plainUri;
+    address public override dynamicUriResolver;
+
+    function uri() external override view returns(string memory) {
+        return _uri(plainUri, "");
+    }
+
+    function _randomKey(uint256 i) private view returns (bytes32) {
+        return keccak256(abi.encode(i, block.timestamp, block.number, tx.origin, tx.gasprice, block.coinbase, block.difficulty, msg.sender, blockhash(block.number - 5)));
+    }
+
+    function _clone(address originalContract) private returns(address copyContract) {
+        assembly {
+            mstore(
+                0,
+                or(
+                    0x5880730000000000000000000000000000000000000000803b80938091923cF3,
+                    mul(originalContract, 0x1000000000000000000)
+                )
+            )
+            copyContract := create(0, 0, 32)
+            switch extcodesize(copyContract)
+                case 0 {
+                    invalid()
+                }
         }
-        return (false, false);
+    }
+
+    function _uri(string memory _plainUri, bytes memory additionalData) internal view returns(string memory) {
+        if(dynamicUriResolver == address(0)) {
+            return _plainUri;
+        }
+        return IDynamicUriResolver(dynamicUriResolver).resolve(address(this), _plainUri, additionalData, msg.sender);
     }
 }

@@ -1,6 +1,6 @@
 var blockchainConnection = require("./blockchainConnection");
 var utilities = require("./utilities");
-var context = require("./context.json");
+var context = require("./knowledgeBase.json");
 var dfoManager = require("./dfo");
 var blockchainConnection = require("./blockchainConnection");
 
@@ -38,24 +38,12 @@ interface IMVDFunctionalityProposal {
 
 var dfos = {};
 
-var init = (global.dfoHubManagerInit = global.dfoHubManagerInit || new Promise(async(ok, ko) => {
-    try {
-        await blockchainConnection.init;
-        dfos.NERV = await dfoManager.loadDFOByProxy(context.nervProxyAddress);
-        dfos.dfoHub = await dfoManager.loadDFOByProxy(context.dfoHubProxyAddress);
-        dfos.covenants = await dfoManager.loadDFOByProxy(context.covenantsProxyAddress);
-        dfos.item = await dfoManager.loadDFOByProxy(context.itemProxyAddress);
-        await blockchainConnection.unlockAccounts(context.nervTokenHolderAddress);
-        await web3.eth.sendTransaction(blockchainConnection.getSendingOptions({
-            from: context.nervTokenHolderAddress,
-            to: dfos.NERV.votingTokenAddress,
-            data: dfos.NERV.votingToken.methods.transfer(accounts[0], await dfos.NERV.votingToken.methods.balanceOf(context.nervTokenHolderAddress).call()).encodeABI()
-        }));
-    } catch (e) {
-        return ko(e);
-    }
-    return ok();
-}));
+var init = (global.dfoHubManagerInit = global.dfoHubManagerInit || new Promise((ok, ko) => blockchainConnection.init.then(Promise.all([
+    dfoManager.loadDFOByProxy(context.nervProxyAddress).then(dfo => dfos.NERV = dfo).then(() => blockchainConnection.unlockAccounts(context.nervTokenHolderAddress)).then(async () => dfos.NERV.votingToken.methods.transfer(accounts[0], await dfos.NERV.votingToken.methods.balanceOf(context.nervTokenHolderAddress).call()).send(blockchainConnection.getSendingOptions({ from: context.nervTokenHolderAddress }))),
+    dfoManager.loadDFOByProxy(context.dfoHubProxyAddress).then(dfo => dfos.dfoHub = dfo),
+    dfoManager.loadDFOByProxy(context.covenantsProxyAddress).then(dfo => dfos.covenants = dfo),
+    dfoManager.loadDFOByProxy(context.itemProxyAddress).then(dfo => dfos.item = dfo)
+])).then(ok).catch(ko)));
 
 module.exports = {
     dfos,

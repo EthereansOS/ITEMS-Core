@@ -2,7 +2,6 @@
 pragma solidity >=0.7.0;
 
 import "./Item.sol";
-import "@ethereansos/swissknife/contracts/dynamicMetadata/model/IDynamicMetadataCapableElement.sol";
 
 struct ItemData {
     bytes32 collectionId;
@@ -14,16 +13,23 @@ struct ItemData {
     mapping(address => uint256) nonces;
 }
 
-interface IItemMainInterface is Item, IDynamicMetadataCapableElement {
+interface IItemMainInterface is Item {
 
     event Collection(address indexed from, address indexed to, bytes32 indexed collectionId);
 
     function interoperableInterfaceModel() external view returns(address);
 
+    function uri() external view returns(string memory);
+    function plainUri() external view returns(string memory);
+    function dynamicUriResolver() external view returns(address);
+    function hostInitializer() external view returns(address);
+
     function collection(bytes32 collectionId) external view returns(address host, string memory name, string memory symbol, string memory uri);
     function collectionUri(bytes32 collectionId) external view returns(string memory);
     function createCollection(Header calldata _collection, CreateItem[] calldata items) external returns(bytes32 collectionId, uint256[] memory itemIds);
     function setCollectionsMetadata(bytes32[] calldata collectionIds, Header[] calldata values) external returns(Header[] memory oldValues);
+
+    function setApprovalForAllByCollectionHost(bytes32 collectionId, address account, address operator, bool approved) external;
 
     function item(uint256 itemId) external view returns(bytes32 collectionId, Header memory header, bytes32 domainSeparator, uint256 totalSupply);
 

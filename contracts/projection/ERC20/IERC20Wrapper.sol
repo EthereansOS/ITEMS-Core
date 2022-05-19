@@ -11,5 +11,7 @@ interface IERC20Wrapper is IItemProjection {
 
     function itemIdOf(address tokenAddress) external view returns(uint256);
 
-    function mint(address[] calldata tokenAddresses, uint256[] calldata amounts, address[] calldata receivers) external payable returns(uint256[] memory itemIds);
+    function source(uint256 itemId) external view returns(address tokenAddress);
+
+    function mintItemsWithPermit(CreateItem[] calldata, bytes[] memory permitData) external payable returns(uint256[] memory);
 }

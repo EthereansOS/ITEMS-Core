@@ -13,7 +13,7 @@ var voidBytes32 = "0x00000000000000000000000000000000000000000000000000000000000
 
 global.formatMoneyDecPlaces = 4;
 
-function fromDecimals(n, d, noFormat) {
+function fromDecimalsRaw(n, d, noFormat) {
     n = (n && n.value || n);
     d = (d && d.value || d);
     if (!n || !d) {
@@ -34,7 +34,7 @@ function fromDecimals(n, d, noFormat) {
     return noFormat === true ? nts : formatMoney(nts);
 }
 
-function toDecimals(n, d) {
+function toDecimalsRaw(n, d) {
     n = (n && n.value || n);
     d = (d && d.value || d);
     if (!n || !d) {
@@ -176,6 +176,14 @@ String.prototype.div = String.prototype.div || function div(b) {
     return op(this, '/', b);
 };
 
+String.prototype.toDecimals = String.prototype.toDecimals || function toDecimals(dec) {
+    return toDecimalsRaw(this, dec);
+};
+
+String.prototype.fromDecimals = String.prototype.fromDecimals || function fromDecimals(dec, noFormat) {
+    return fromDecimalsRaw(this, dec, noFormat);
+};
+
 Number.prototype.add = Number.prototype.add || function add(b) {
     return op(this, '+', b);
 };
@@ -190,6 +198,10 @@ Number.prototype.mul = Number.prototype.mul || function mul(b) {
 
 Number.prototype.div = Number.prototype.div || function div(b) {
     return op(this, '/', b);
+};
+
+Number.prototype.toDecimals = Number.prototype.toDecimals || function toDecimals(dec) {
+    return toDecimalsRaw(this, dec);
 };
 
 function toEthereumSymbol(decimals) {
@@ -235,8 +247,8 @@ function toEthereumSymbol(decimals) {
 module.exports = {
     voidEthereumAddress,
     voidBytes32,
-    fromDecimals,
-    toDecimals,
+    fromDecimals : fromDecimalsRaw,
+    toDecimals : toDecimalsRaw,
     numberToString,
     formatNumber,
     formatMoney,
