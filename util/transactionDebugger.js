@@ -1,9 +1,58 @@
 var path = require('path');
 var fs = require('fs');
+var ganacheTransactionDebugger = require('./ganache-transactionDebugger');
 
 var tracer = fs.readFileSync(path.resolve(__dirname, 'transactionTracer.js'), 'UTF-8');
 
 var bytecodeCache = {};
+
+function fixOpcodes(step) {
+    if(!step) {
+        return step
+    }
+    if(step.type === 'CREATE' || step.type === 'CREATE2') {
+        var to = step.to
+        if(step.steps) {
+            for(var i in step.steps) {
+                var stp = step.steps[i]
+                stp.from = to
+                step.steps[i] = stp
+            }
+        }
+        if(step.logs) {
+            for(var i in step.logs) {
+                var stp = step.logs[i]
+                stp.address = to
+                step.logs[i] = stp
+            }
+        }
+    }
+    if(step.type === 'DELEGATECALL') {
+        var from = step.from
+        if(step.steps) {
+            for(var i in step.steps) {
+                var stp = step.steps[i]
+                stp.from = from
+                step.steps[i] = stp
+            }
+        }
+        if(step.logs) {
+            for(var i in step.logs) {
+                var stp = step.logs[i]
+                stp.address = from
+                step.logs[i] = stp
+            }
+        }
+    }
+
+    if(step.steps) {
+        for(var i in step.steps) {
+            step.steps[i] = fixOpcodes(step.steps[i])
+        }
+    }
+
+    return step
+}
 
 async function cleanAndGetBytecodes(web3, step, transaction) {
     try {
@@ -26,6 +75,7 @@ async function cleanAndGetBytecodes(web3, step, transaction) {
             step.gasPrice = transaction.gasPrice;
             step.gas = transaction.gas;
             step.gasUsed = transaction.gasUsed;
+            step.success = transaction.status;
         }
         delete step.parent;
 
@@ -58,21 +108,9 @@ async function cleanAndGetBytecodes(web3, step, transaction) {
 
 function debugTransaction(transactionHash, web3) {
     return Promise.all([
-        new Promise(function(ok, ko) {
-            web3.currentProvider.sendAsync({
-                "id": new Date().getTime(),
-                "jsonrpc": "2.0",
-                "method": "debug_traceTransaction",
-                "params": [transactionHash, {
-                    tracer
-                }]
-            }, function(err, response) {
-                return err ? ko(err) : ok(response.result);
-            })
-        }),
         web3.eth.getTransaction(transactionHash),
         web3.eth.getTransactionReceipt(transactionHash)
-    ]).then(transactionData => cleanAndGetBytecodes(web3, transactionData[0], {...transactionData[1], ...transactionData[2] }));
+    ]).then(result => ganacheTransactionDebugger(web3, transactionHash, tracer, result)).then(transactionData => cleanAndGetBytecodes(web3, fixOpcodes(transactionData[0]), {...transactionData[1], ...transactionData[2] }));
 }
 
 function traceCall(transaction, web3) {
@@ -92,7 +130,7 @@ function traceCall(transaction, web3) {
 
 module.exports = function transactionDebugger(web3, callback) {
     var debugBlock = function debugBlock(blockNumber, callback) {
-        return web3.eth.getBlock(blockNumber).then(block => Promise.all(block.transactions.map(transactionHash => debugTransaction(transactionHash, web3)))).then(callback).catch(console.error);
+        return web3.eth.getBlock(blockNumber).then(block => block && Promise.all(block.transactions.map(transactionHash => debugTransaction(transactionHash, web3)))).then(callback).catch(e => void(console.error(e), callback([])));
     };
     callback && web3.eth.subscribe('newBlockHeaders').on('data', data => debugBlock(data.number, callback));
     return {

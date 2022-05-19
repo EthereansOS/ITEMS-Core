@@ -1,84 +1,202 @@
 var Web3 = require('web3');
 var utils = require("ethereumjs-util");
 var gasCalculator = require("./gasCalculator");
+
+function getInstrumentedGanache() {
+    var fs = require('fs');
+    var path = require('path');
+    var relativePath = 'node_modules/ganache/dist/node/1.js';
+    var halfPath = '';
+    var filePath;
+    while(true) {
+        filePath = path.resolve(__dirname, halfPath, relativePath)
+        if(fs.existsSync(filePath)) {
+            break;
+        }
+        halfPath += '../';
+    }
+
+    var content = fs.readFileSync(filePath, "utf-8");
+    var originalContent = fs.readFileSync(filePath, "utf-8");
+
+    var update;
+
+    var blockchain = 'd(this,a,A,"f")'
+    if(content.indexOf(blockchain) !== -1) {
+        content = content.split(blockchain).join('d(this,a,this.blockchain=A,"f")');
+        update = true;
+    }
+
+    var executor = 'd(this,i,t,"f")';
+    if(content.indexOf(executor) !== -1) {
+        content = content.split(executor).join('d(this,i,this.executor=t,"f")');
+        update = true;
+    }
+
+    var api = 'd(this,n,new y.default';
+    if(content.indexOf(api) !== -1) {
+        content = content.split(api).join('d(this,n,this.api=new y.default');
+        update = true;
+    }
+
+    var simultaneousRequests = process.env.BLOCKCHAIN_SERVER_SIMULTANEOUS_REQUESTS || "0";
+    var simultaneousRequestReplacer = 'const o=new s.RequestCoordinator(r?'
+    if(content.indexOf(simultaneousRequestReplacer + simultaneousRequests) === -1) {
+        var split = content.split(simultaneousRequestReplacer);
+        var subSplit = split[1].split(':');
+        subSplit[0] = simultaneousRequests;
+        split[1] = subSplit.join(':');
+        content = split.join(simultaneousRequestReplacer);
+        update = true;
+    }
+
+    var queuePatch = ';setTimeout((function(){i(this,s,"f").call(this)}).bind(this));';
+    var queueStart = 'this.runningTasks--,i(this,s,"f").call(this)}))'
+    if(content.indexOf(queuePatch) === -1) {
+        //content = content.split(queueStart).join(queueStart + queuePatch);
+        update = true;
+    }
+
+    var requestCoordinatorStart = 'a=new s.Executor(';
+    var requestCoordinatorPatch = 'global.requestCoordinator=';
+    if(content.indexOf(requestCoordinatorStart + requestCoordinatorPatch) === -1) {
+        content = content.split(requestCoordinatorStart).join(requestCoordinatorStart + requestCoordinatorPatch);
+        update = true;
+    }
+    if(update) {
+        try {
+            fs.unlinkSync(filePath);
+        } catch(e) {}
+        fs.writeFileSync(filePath, content);
+    }
+
+    var Ganache = require("Ganache");
+
+    try {
+        fs.unlinkSync(filePath);
+    } catch(e) {}
+    fs.writeFileSync(filePath, originalContent);
+
+    return Ganache;
+}
+
 module.exports = {
     init: global.blockchainConnection = global.blockchainConnection || new Promise(async function(ok, ko) {
         try {
             (require('dotenv')).config();
             var options = {
-                gasLimit: 10000000,
-                db: require('memdown')(),
-                total_accounts: 15,
-                default_balance_ether: 9999999999999999999,
-                asyncRequestProcessing : true
+                miner : {
+                    blockGasLimit : 10000000
+                },
+                chain : {
+                    asyncRequestProcessing : true,
+                    vmErrorsOnRPCResponse : true
+                },
+                wallet : {
+                    totalAccounts : 15,
+                    defaultBalance: 9999999999999999999
+                },
+                database : {
+                    db: require('memdown')()
+                }
             };
             if (process.env.blockchain_connection_string) {
-                options.fork = process.env.blockchain_connection_string;
-                var block = await new Web3(process.env.blockchain_connection_string).eth.getBlock("latest");
+                options.fork = {
+                    url : process.env.blockchain_connection_string
+                }
+                process.env.fork_block_number && (options.fork.blockNumber = parseInt(process.env.fork_block_number));
+                var block = await new Web3(process.env.blockchain_connection_string).eth.getBlock(options.fork.blockNumber || "latest");
+                options.chain.chainId = await new Web3(process.env.blockchain_connection_string).eth.getChainId();
                 blockchainConnection.forkBlock = block.number + 1;
-                options.gasLimit = parseInt(block.gasLimit * 0.79);
+                options.miner.blockGasLimit = parseInt(block.gasLimit * 0.79);
             }
-            global.gasLimit = options.gasLimit;
-            global.gasPrice = await gasCalculator();
-            var Ganache = require("ganache-core");
+            global.gasLimit = options.miner.blockGasLimit;
+            global.gasPrice = process.env.BYPASS_GAS_PRICE === 'true' ? await gasCalculator() : null;
+            var Ganache = getInstrumentedGanache();
             var onProvider = async function onProvider(provider) {
                 global.accounts = await (global.web3 = new Web3(global.blockchainProvider = provider, null, { transactionConfirmationBlocks: 1 })).eth.getAccounts();
-                if(process.env.BLOCKCHAIN_CONNECTION_FOR_LOGS_STRING) {
-                    global.web3.eth.getPastLogsLegacy = global.web3.eth.getPastLogs;
-                    var normalizeBlockNumber = (n, latestBlock) => n === undefined || n === null || n instanceof Number ? n : n === 'latest' || n === 'pending' ? latestBlock : parseInt(n);
-                    var tryManageLogs = async function tryManageLogs(args, callback, originalMethod) {
-                        if(args.method !== 'eth_getLogs') {
-                            return originalMethod.apply(provider, [args, callback]);
+                global.web3.currentProvider.blockchainConnection = global.blockchainConnection;
+                global.web3.currentProvider.accounts = global.accounts;
+                provider.executor.oldExecute = provider.executor.execute;
+                global.web3ForLogs = global.web3ForLogs || (process.env.BLOCKCHAIN_CONNECTION_FOR_LOGS_STRING ? new Web3(process.env.BLOCKCHAIN_CONNECTION_FOR_LOGS_STRING) : global.web3);
+                var normalizeBlockNumber = (n, latestBlock) => n === undefined || n === null || n instanceof Number ? n : n === 'latest' || n === 'pending' ? latestBlock : parseInt(n);
+                function instrumentExecutor(provider) {
+                    const executor = provider.executor;
+                    const oldExecute = executor.execute;
+                    executor.execute = function execute() {
+                        if((arguments[1] !== 'eth_getLogs' && arguments[1] !== 'evm_mine' && arguments[1] !== 'evm_addAccount') || (arguments[1] === 'eth_getLogs' && global.web3ForLogs === global.web3)) {
+                            return oldExecute.apply(executor, arguments);
                         }
-                        global.web3ForLogs = global.web3ForLogs || new Web3(process.env.BLOCKCHAIN_CONNECTION_FOR_LOGS_STRING);
+                        if(arguments[1] === 'evm_mine') {
+                            var blocks;
+                            try {
+                                blocks = arguments[2][0].blocks;
+                            } catch(e) {}
+                            try {
+                                if(arguments[2][0].timestamp) {
+                                    var oldLimit = global.requestCoordinator.limit;
+                                    global.requestCoordinator.limit = arguments[2][0].timestamp || oldLimit;
+                                    global.requestCoordinator.resume();
+                                    global.requestCoordinator.limit = oldLimit;
+                                }
+                            } catch(e) {}
+                            var result = { value : new Promise(ok => ok("0x0")) };
+                            return blocks ? blockchainConnection.fastForward(blocks).then(() => result) : new Promise(ok => ok(result));
+                        }
+                        if(arguments[1] === 'evm_addAccount') {
+                            return blockchainConnection.unlockAccounts(arguments[2][0]).then(() => ({ value : new Promise(ok => ok("0x0")) })).catch(e => ({ value : new Promise((_, ko) => ko(e)) }));
+                        }
+                        var originalArguments = [...arguments];
+                        return new Promise(async function(ok) {
+                            try {
+                                var args = originalArguments[2][0];
 
-                        var latestBlock = (await global.web3.eth.getBlock('latest')).number;
+                                var latestBlock = await global.web3.eth.getBlockNumber();
 
-                        var startBlock = normalizeBlockNumber(args.params[0].fromBlock, latestBlock) || 0;
-                        var endBlock = normalizeBlockNumber(args.params[0].toBlock, latestBlock) || latestBlock;
+                                var startBlock = normalizeBlockNumber(args.fromBlock, latestBlock) || 0;
+                                var endBlock = normalizeBlockNumber(args.toBlock, latestBlock) || latestBlock;
 
-                        startBlock = startBlock > endBlock ? 0 : startBlock;
-                        endBlock = startBlock > endBlock ? latestBlock : endBlock;
+                                startBlock = startBlock > endBlock ? 0 : startBlock;
+                                endBlock = startBlock > endBlock ? latestBlock : endBlock;
 
-                        var remoteLogsPromise;
-                        startBlock < blockchainConnection.forkBlock && (remoteLogsPromise = global.web3ForLogs.eth.getPastLogs({
-                            ...args.params[0],
-                            fromBlock : startBlock,
-                            toBlock : endBlock >= blockchainConnection.forkBlock ? (blockchainConnection.forkBlock - 1) : endBlock
-                        }));
+                                var promises = [];
+                                startBlock < blockchainConnection.forkBlock && (promises.push(global.web3ForLogs.eth.getPastLogs({
+                                    ...args,
+                                    fromBlock : startBlock,
+                                    toBlock : endBlock >= blockchainConnection.forkBlock ? (blockchainConnection.forkBlock - 1) : endBlock
+                                })));
 
-                        var localArgs;
-                        endBlock >= blockchainConnection.forkBlock && (localArgs = {
-                            ...args.params[0],
-                            fromBlock : startBlock < blockchainConnection.forkBlock ? blockchainConnection.forkBlock : startBlock,
-                            toBlock : endBlock
+                                if(endBlock >= blockchainConnection.forkBlock) {
+                                    originalArguments[2][0] = {
+                                        ...args,
+                                        fromBlock : startBlock < blockchainConnection.forkBlock ? blockchainConnection.forkBlock : startBlock,
+                                        toBlock : endBlock
+                                    }
+                                    promises.push((await oldExecute.apply(executor, originalArguments)).value)
+                                }
+                                promises = await Promise.all(promises);
+                                promises = promises.reduce((acc, it) => ([...acc, ...it]), []);
+                                return ok({ value : new Promise(ok => ok(promises))});
+                            } catch(e) {
+                                return ok({ value : new Promise((_, ko) => ko(e))});
+                            }
                         });
-
-                        var newCallback = (error, response) => error || !remoteLogsPromise ? setTimeout(() => callback(error, response)) : remoteLogsPromise.then(logs => setTimeout(() => callback(error, {...response, result : [...logs, ...(response.result || [])]})));
-
-                        return !localArgs ? newCallback(undefined, args) : originalMethod.apply(provider, [{...args, params : [localArgs]}, newCallback]);
-                    };
-
-                    var oldSend = provider.send;
-                    provider.send = (args, callback) => tryManageLogs(args, callback, oldSend);
-                    var oldSendAsync = provider.sendAsync;
-                    provider.sendAsync = (args, callback) => tryManageLogs(args, callback, oldSendAsync);
+                    }
                 }
+                instrumentExecutor(web3.currentProvider);
+                process.env.BLOCKCHAIN_ADDRESSES_TO_UNLOCK && await global.blockchainConnection.unlockAccounts(JSON.parse(process.env.BLOCKCHAIN_ADDRESSES_TO_UNLOCK));
                 await global.blockchainConnection.fastForward(10);
-                if(process.env.BLOCKCHAIN_ADDRESSES_TO_UNLOCK) {
-                    await global.blockchainConnection.unlockAccounts(JSON.parse(process.env.BLOCKCHAIN_ADDRESSES_TO_UNLOCK));
-                }
                 return ok(global.web3);
             };
             if(process.env.blockchain_server_port) {
                 var server = Ganache.server(options);
-                return server.listen(process.env.blockchain_server_port, err => err ? ko(err) : onProvider(server.provider));
+                return server.listen(parseInt(process.env.blockchain_server_port), err => err ? ko(err) : onProvider(server.provider));
             }
             return onProvider(Ganache.provider(options));
         } catch (e) {
             return ko(e);
         }
-    }),
+    }).catch(console.error),
     getSendingOptions(edit) {
         return {
             from: global.accounts[0],
@@ -90,7 +208,7 @@ module.exports = {
     async fastForward(blocks, remote) {
         var blockNumber = parseInt(await web3.eth.getBlockNumber()) + (blocks = blocks && parseInt(blocks) || 1);
         await new Promise(function(ok) {
-            var createBlock = async () => blocks-- === 0 ? ok() : remote ? await web3.currentProvider.sendAsync({ "id": new Date().getTime(), "jsonrpc": "2.0", "method": "evm_mine", "params": [] }, createBlock) : global.blockchainProvider.manager.state.blockchain.createBlock((_, block) => global.blockchainProvider.manager.state.blockchain.putBlock(block, [], [], createBlock));
+            var createBlock = async () => blocks-- === 0 ? ok() : remote ? await web3.currentProvider.sendAsync({ "id": new Date().getTime(), "jsonrpc": "2.0", "method": "evm_mine", "params": [] }, createBlock) : global.blockchainProvider.blockchain.mine(-1, new Date().getTime(), blocks === 0).then(createBlock);
             createBlock();
         });
         while (parseInt(await web3.eth.getBlockNumber()) < blockNumber) {
@@ -98,7 +216,7 @@ module.exports = {
         }
     },
     async jumpToBlock(block, notIncluded, remote) {
-        var currentBlock = await web3.eth.getBlockNumber();
+        var currentBlock = parseInt(await web3.eth.getBlockNumber());
         var blocks = block - currentBlock;
         notIncluded && blocks--;
         await this.fastForward(blocks, remote);
@@ -114,76 +232,33 @@ module.exports = {
             return '0';
         }
     },
-    unlockAccounts(accountsInput) {
+    unlockAccounts(accountsInput, noMoney) {
         var accountsToUnlock = (accountsInput = accountsInput instanceof Array ? accountsInput : [accountsInput]).map(it => it);
-        return new Promise(function(ok, ko) {
-            var unlock = async function unlock(error, response) {
-                if (error) {
-                    return ko(error);
-                }
-                if(accountsToUnlock.length === 0) {
-                    if (!response || !response.result) {
-                        return ko((response && response.result) || response);
-                    }
-                    return ok((response && response.result) || response);
-                }
+        return new Promise(async function(ok, ko) {
+            for(var address of accountsToUnlock) {
                 try {
-                    await web3.currentProvider.sendAsync({
-                        "id": new Date().getTime(),
-                        "jsonrpc": "2.0",
-                        "method": "evm_unlockUnknownAccount",
-                        "params": [web3.utils.toChecksumAddress(accountsToUnlock.shift())]
-                    }, unlock);
-                } catch (e) {
+                    var account = web3.utils.toChecksumAddress(address);
+                    await (await web3.currentProvider.executor.oldExecute(web3.currentProvider.api, "evm_addAccount", [account, ""])).value;
+                    return (await web3.currentProvider.executor.oldExecute(web3.currentProvider.api, "personal_unlockAccount", [account, "", 0])).value.then(ok);
+                } catch(e) {
                     return ko(e);
                 }
             }
-            unlock();
-        }).then(() => global.blockchainConnection.safeTransferETH(accountsInput));
+        }).then(() => !noMoney && global.blockchainConnection.safeTransferETH(accountsInput));
     },
     async safeTransferETH(accountsInput) {
         accountsInput = accountsInput instanceof Array ? accountsInput : [accountsInput];
-        var previousBalances = {};
-        await Promise.all(accountsInput.map(async it => previousBalances[it] = parseInt(await web3.eth.getBalance(it))));
-        var blockchain = global.blockchainProvider.manager.state.blockchain;
-        var stateManager = blockchain.vm.stateManager;
-        var accounts = [];
-        var index = 0;
-        await new Promise(function(ok, ko) {
-            var onAccount = function onAccount(error, account) {
-                if(error) {
-                    return ko(error);
-                }
-                if(account) {
-                    account.balance = utils.toBuffer((9999999999999999999 * 1e18) + previousBalances[accountsInput[index]]);
-                    accounts.push({
-                        address: utils.toBuffer(accountsInput[index++].toLowerCase()),
-                        account
-                    });
-                }
-                if(index === accountsInput.length) {
-                    return ok();
-                }
-                blockchain.getAccount(accountsInput[index], onAccount);
-            };
-            onAccount();
-        });
-        await new Promise(function(ok) {
-            blockchain.createBlock(function(_, block) {
-                stateManager.checkpoint(function() {
-                    var putAccount = function() {
-                        if (accounts.length === 0) {
-                            return stateManager.commit(function() {
-                                blockchain.putBlock(block, [], [], ok);
-                            });
-                        }
-                        var data = accounts.shift();
-                        stateManager.putAccount(data.address, data.account, putAccount);
-                    };
-                    putAccount();
-                });
-            });
-        });
+        var number = new utils.BN(utilities.numberToString(99999*1e18));
+        var stateManager = global.blockchainProvider.blockchain.vm.stateManager;
+        await stateManager.checkpoint();
+        for(var address of accountsInput) {
+            var buf = Buffer.from(web3.utils.toChecksumAddress(address).substring(2), "hex");
+            var account = await stateManager.getAccount({ buf });
+            account.balance = number;
+            await stateManager.putAccount({ buf }, account);
+        }
+        await stateManager.commit();
+        await blockchainConnection.fastForward(1);
     },
     async createAndUnlockContract(Compilation, args) {
         var contract = await new web3.eth.Contract(Compilation.abi).deploy({ data: Compilation.bin, arguments: args || [] }).send(blockchainConnection.getSendingOptions());

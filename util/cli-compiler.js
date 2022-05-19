@@ -1,1 +1,1 @@
-(require('./compile'))(process.argv[2]).then(console.log).catch(console.error);
+(require('./compile'))(process.argv[2], process.argv[3], process.argv[4]).then(it => void(console.log(JSON.stringify(it.abi)), console.log(it))).catch(console.error);

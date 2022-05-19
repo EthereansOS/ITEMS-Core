@@ -1,6 +1,12 @@
 return {
     tx: null,
     currentStep: null,
+    delegateCall : false,
+    getFrom(step, currentStep) {
+        var from = this.delegateCall ? currentStep.from : step.from;
+        this.delegateCall = false;
+        return from;
+    },
     callbacks: {
         STATICCALL(step, currentStep) {
             var data = step.sliceMemory(parseInt(step.stack[2]), parseInt(step.stack[3]));
@@ -10,7 +16,7 @@ return {
                 parent: currentStep,
                 gas: this.toNumberString(step.stack[0]),
                 gasCost: this.numberToString(step.gasCost),
-                from: step.from,
+                from: this.getFrom(step, currentStep),
                 to: this.decodeAddress(step.stack[1]),
                 value: '0',
                 data,
@@ -31,7 +37,7 @@ return {
                 parent: currentStep,
                 gas: this.toNumberString(step.stack[0]),
                 gasCost: this.numberToString(step.gasCost),
-                from: step.from,
+                from: this.getFrom(step, currentStep),
                 to: this.decodeAddress(step.stack[1]),
                 value: '0',
                 data,
@@ -42,6 +48,7 @@ return {
                 method,
                 params
             });
+            this.delegateCall = true;
             return currentStep.steps[currentStep.steps.length - 1];
         },
         CALL(step, currentStep, tx) {
@@ -53,7 +60,7 @@ return {
                 parent: currentStep,
                 gas: this.toNumberString(step.stack[0]),
                 gasCost: this.numberToString(step.gasCost),
-                from: step.from,
+                from: this.getFrom(step, currentStep),
                 to: this.decodeAddress(step.stack[1]),
                 value: this.toNumberString(step.stack[2]),
                 data,
@@ -74,7 +81,7 @@ return {
                 parent: currentStep,
                 gas: this.toNumberString(step.stack[0]),
                 gasCost: this.numberToString(step.gasCost),
-                from: step.from,
+                from: this.getFrom(step, currentStep),
                 to: this.decodeAddress(step.stack[1]),
                 value: this.toNumberString(step.stack[2]),
                 data,
@@ -92,7 +99,7 @@ return {
                 type: step.op,
                 parent: currentStep,
                 gasCost: this.numberToString(step.gasCost),
-                from: step.from,
+                from: this.getFrom(step, currentStep),
                 value: this.toNumberString(step.stack[0]),
                 data: step.sliceMemory(parseInt(step.stack[1]), parseInt(step.stack[2])),
                 steps: [],
@@ -107,7 +114,7 @@ return {
                 type: step.op,
                 parent: currentStep,
                 gasCost: this.numberToString(step.gasCost),
-                from: step.from,
+                from: this.getFrom(step, currentStep),
                 value: this.toNumberString(step.stack[0]),
                 data: step.sliceMemory(parseInt(step.stack[1]), parseInt(step.stack[2])),
                 salt: "0x" + step.stack[3],
@@ -123,7 +130,7 @@ return {
                 blockHash: tx.blockHash,
                 transactionHash: tx.transactionHash,
                 blockNumber: tx.blockNumber,
-                address: step.from,
+                address: this.getFrom(step, currentStep),
                 topics: [],
                 data: step.sliceMemory(parseInt(step.stack[0]), parseInt(step.stack[1]))
             });
@@ -134,7 +141,7 @@ return {
                 blockHash: tx.blockHash,
                 transactionHash: tx.transactionHash,
                 blockNumber: tx.blockNumber,
-                address: step.from,
+                address: this.getFrom(step, currentStep),
                 topics: [
                     step.stack[2]
                 ],
@@ -147,7 +154,7 @@ return {
                 blockHash: tx.blockHash,
                 transactionHash: tx.transactionHash,
                 blockNumber: tx.blockNumber,
-                address: step.from,
+                address: this.getFrom(step, currentStep),
                 topics: [
                     step.stack[2],
                     step.stack[3]
@@ -161,7 +168,7 @@ return {
                 blockHash: tx.blockHash,
                 transactionHash: tx.transactionHash,
                 blockNumber: tx.blockNumber,
-                address: step.from,
+                address: this.getFrom(step, currentStep),
                 topics: [
                     step.stack[2],
                     step.stack[3],
@@ -176,7 +183,7 @@ return {
                 blockHash: tx.blockHash,
                 transactionHash: tx.transactionHash,
                 blockNumber: tx.blockNumber,
-                address: step.from,
+                address: this.getFrom(step, currentStep),
                 topics: [
                     step.stack[2],
                     step.stack[3],
@@ -191,6 +198,7 @@ return {
             currentStep.terminated = true;
             var parent = currentStep.parent;
             delete currentStep.parent;
+            this.delegateCall = false;
             return parent || tx;
         },
         INVALID(step, currentStep, tx) {
@@ -199,6 +207,7 @@ return {
             currentStep.errorData = "INVALID";
             var parent = currentStep.parent;
             delete currentStep.parent;
+            this.delegateCall = false;
             return parent || tx;
         },
         RETURN(step, currentStep, tx) {
@@ -209,6 +218,7 @@ return {
             } catch (e) {}
             var parent = currentStep.parent;
             delete currentStep.parent;
+            this.delegateCall = false;
             return parent || tx;
         },
         REVERT(step, currentStep, tx) {
@@ -217,6 +227,7 @@ return {
             currentStep.errorData = step.sliceMemory(parseInt(step.stack[0]), parseInt(step.stack[1]));
             var parent = currentStep.parent;
             delete currentStep.parent;
+            this.delegateCall = false;
             return parent || tx;
         }
     },

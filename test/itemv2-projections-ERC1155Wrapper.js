@@ -166,6 +166,9 @@ describe("itemv2 projections ERC1155Wrapper", () => {
       ["2000000000000000000"]
     );
 
+    await catchCall(blockchainCall(mainInterface.methods.safeTransferFrom, accounts[1], wrapper.options.address, itemId1, utilities.numberToString(1e18), "0x", {from : accounts[1]}), "invalid");
+    await catchCall(blockchainCall(wrapper.methods.safeTransferFrom, accounts[1], wrapper.options.address, itemId1, utilities.numberToString(1e18), "0x", {from : accounts[1]}), "invalid");
+
     itemId2 = await wrapperResource.mintItems1155(
       token2,
       accounts[1],
@@ -430,7 +433,7 @@ describe("itemv2 projections ERC1155Wrapper", () => {
     )
       .deploy({ data: ItemInteroperableInterface.bin })
       .send(blockchainConnection.getSendingOptions());
-    itemInteroperableInterfaceAddress = 
+    itemInteroperableInterfaceAddress =
       itemInteroperableInterface.options.address;
 
     var NFTDynamicUriRenderer = await compile('util/NFTDynamicUriRenderer');
@@ -617,7 +620,7 @@ describe("itemv2 projections ERC1155Wrapper", () => {
     await catchCall(
       wrapper.methods
       .burn(utilities.voidEthereumAddress, itemId2, amountBurn2, burn2)
-      .send(blockchainConnection.getSendingOptions({ from: accounts[1] })), 
+      .send(blockchainConnection.getSendingOptions({ from: accounts[1] })),
       "required account");
 
     await wrapperResource.burn1155(
@@ -759,7 +762,7 @@ describe("itemv2 projections ERC1155Wrapper", () => {
     );
 
     await catchCall(wrapper.methods.setItemsCollection([0],[utilities.voidBytes32]).send(blockchainConnection.getSendingOptions({ from: accounts[1] })), "Impossibru");
-    
+
     var headerCollection = {
       host: accounts[1],
       name: "newCollection",
@@ -806,56 +809,9 @@ describe("itemv2 projections ERC1155Wrapper", () => {
         )
       }
     ))
-    
+
 
   });
-
-  it("#000 ", async () => {
-    var CreateItem7 = [
-      {
-        header: {
-          host: accounts[1],
-          name: "Item1",
-          symbol: "I1",
-          uri: "uriItem1",
-        },
-        collectionId: await zeroDecimals.methods.collectionId().call(),
-        id: 0,
-        accounts: [accounts[5]],
-        amounts: ["6"],
-      },
-    ];
-
-    var tx = await zeroDecimals.methods
-      .mintItems(CreateItem7)
-      .send(blockchainConnection.getSendingOptions({ from: accounts[1] }));
-
-    var scenarioItem7erc1155Id = await itemProjection.getItemIdFromLog(tx);
-
-    assert.equal(await zeroDecimals.methods.balanceOf(accounts[5], scenarioItem7erc1155Id[0]).call(), "6")
-
-    var encodeMint = web3.eth.abi.encodeParameters(
-      ["uint256[]", "address[]"],
-      [["1", "3", "2"], [utilities.voidEthereumAddress, accounts[6], accounts[7]]]
-    );
-
-    var itemId = await wrapperResource.mintMultiItems1155(
-      zeroDecimals,
-      accounts[5],
-      wrapper.options.address,
-      scenarioItem7erc1155Id[0],
-      6,
-      encodeMint,
-      item3,
-      wrapper,
-      [accounts[5]],
-      ["1000000000000000000"]
-    );
-    assert.equal(await wrapper.methods.totalSupply(itemId).call(), "6000000000000000000");
-    assert.equal(await wrapper.methods.balanceOf(accounts[5], itemId).call(), "1000000000000000000")
-    assert.equal(await wrapper.methods.balanceOf(accounts[6], itemId).call(), "3000000000000000000")
-    assert.equal(await wrapper.methods.balanceOf(accounts[7], itemId).call(), "2000000000000000000")
-  })
 
   it("#673 Scenario 1 Testing some different unwrap scenarios with different balances", async () => {
     var prevResult2Holder1 = await token2.methods
@@ -2057,6 +2013,15 @@ describe("itemv2 projections ERC1155Wrapper", () => {
       "3"
     );
 
+    await wrapperResource.burn1155(
+      accounts[5],
+      accounts[5],
+      itemId7,
+      "600000000000000000",
+      burn7,
+      wrapper
+    );
+
     var encodeMint = web3.eth.abi.encodeParameters(
       ["uint256[]", "address[]"],
       [[3], [accounts[5]]]
@@ -2122,7 +2087,7 @@ describe("itemv2 projections ERC1155Wrapper", () => {
         .call(),
       "0"
     );
-    
+
     await wrapperResource.safeTransfer1155(
       accounts[5],
       accounts[4],

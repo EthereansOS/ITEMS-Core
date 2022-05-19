@@ -200,7 +200,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
 
     async function test652() {
         exec652 = true;
-        tokenHolder = "0x1204e98218f81eaa52578d340cba8ad2dc975c65";
+        tokenHolder = "0x1204e98218f81EAA52578d340cbA8AD2dC975c65";
         var tokenList = [
             "128749172",
             "128747931",
@@ -271,7 +271,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         );
 
         await blockchainConnection.unlockAccounts(tokenHolder);
-        Promise.all(
+        await Promise.all(
             tokenList.map(async(token, index) => {
                 await mainToken.methods
                     .safeTransferFrom(tokenHolder, accounts[1], token)
@@ -284,6 +284,8 @@ describe("itemv2 projections ERC721Wrapper", () => {
 
         await Promise.all(
             receivers.map(async(address, index) => {
+                console.log(await mainToken.methods.balanceOf(tokenHolder).call())
+                console.log(prevResult[index].sub(receivers.length))
                 assert.equal(
                     await mainToken.methods.balanceOf(tokenHolder).call(),
                     prevResult[index].sub(receivers.length)
@@ -1010,7 +1012,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         -Unwrap the 721 burning 0,6
         -Wrap the 721, the minted amount must be 0,6.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -1026,6 +1028,165 @@ describe("itemv2 projections ERC721Wrapper", () => {
             tokenList.map(async(token, index) => {
                 await mainToken.methods
                     .safeTransferFrom(tokenHolder, accounts[1], token)
+                    .send(blockchainConnection.getSendingOptions({ from: tokenHolder }));
+                await mainToken.methods
+                    .approve(wrapper.options.address, token)
+                    .send(blockchainConnection.getSendingOptions({ from: accounts[1] }));
+            })
+        );
+
+        var tx = await wrapperResource.mintItems721(
+            tokenList,
+            receivers,
+            accounts[1],
+            wrapper,
+            mainToken.options.address,
+            "1000000000000000000"
+        );
+
+        var logs = (await web3.eth.getTransactionReceipt(tx.transactionHash)).logs;
+
+        var itemIds = logs
+            .filter(
+                (it) =>
+                it.topics[0] === web3.utils.sha3("Token(address,uint256,uint256)")
+            )
+            .map((it) => web3.eth.abi.decodeParameter("uint256", it.topics[3]));
+
+        await wrapper.methods
+            .safeTransferFrom(
+                accounts[1],
+                accounts[2],
+                itemIds[0],
+                "400000000000000000",
+                "0x"
+            )
+            .send(blockchainConnection.getSendingOptions({ from: accounts[1] }));
+
+        assert.equal(
+            await wrapper.methods.balanceOf(accounts[1], itemIds[0]).call(),
+            "600000000000000000"
+        );
+        assert.equal(
+            await wrapper.methods.balanceOf(accounts[2], itemIds[0]).call(),
+            "400000000000000000"
+        );
+
+        var burn1 = web3.eth.abi.encodeParameters(
+            ["address", "uint256", "address", "bytes", "bool", "bool"], [
+                tokenAddress,
+                tokenList[0],
+                utilities.voidEthereumAddress,
+                "0x",
+                false,
+                false,
+            ]
+        );
+
+        await catchCall(
+            wrapper.methods
+            .burn(
+                accounts[2],
+                itemIds[0],
+                ("51".mul(1e16)),
+                burn1
+            ).send(blockchainConnection.getSendingOptions({ from: accounts[2] })),
+            "amount exceeds balance"
+        );
+
+        await catchCall(
+            wrapper.methods
+            .burn(
+                accounts[1],
+                itemIds[0],
+                ("51".mul(1e16)).sub(1),
+                burn1
+            ).send(blockchainConnection.getSendingOptions({ from: accounts[1] })),
+            "Insufficient balance"
+        );
+
+        await wrapperResource.burn721(
+            accounts[1],
+            accounts[1],
+            itemIds[0],
+            await wrapper.methods.balanceOf(accounts[1], itemIds[0]).call(),
+            burn1,
+            wrapper
+        );
+
+        assert.equal(await mainToken.methods.balanceOf(accounts[1]).call(), "1");
+
+        await mainToken.methods
+            .approve(wrapper.options.address, tokenList[0])
+            .send(blockchainConnection.getSendingOptions({ from: accounts[1] }));
+
+         await catchCall(wrapperResource.mintItems721(
+           tokenList,
+           receivers,
+           accounts[1],
+           wrapper,
+           mainToken.options.address,
+           "1000000000000000000",
+           " "
+         ));
+
+        var tx = await wrapperResource.mintItems721(
+            tokenList,
+            receivers,
+            accounts[1],
+            wrapper,
+            mainToken.options.address,
+            "600000000000000000"
+        );
+
+        assert.equal(await mainToken.methods.balanceOf(accounts[1]).call(), "0");
+
+        assert.equal(
+            await wrapper.methods.balanceOf(receivers[0], itemIds[0]).call(),
+            utilities.numberToString(6 * 1e17)
+        );
+
+        assert.equal(
+            await wrapper.methods.totalSupply(itemIds[0]).call(),
+            utilities.numberToString(1e18)
+        );
+    });
+
+    it("#656 Scenario 1b Testing some different unwrap and rewrap scenarios with different balances", async() => {
+        /**
+        * Authorized subjects:
+        * Item holders
+        * Functions used in the test:
+        * mint
+        * safeTransferFrom
+        * Burn
+        cryptokitties
+
+        Scenario 1:
+        -Wrap a 721.
+        -transfer 0,4.
+        -Unwrap the 721 burning 0,6
+        -Wrap the 721, the minted amount must be 0,6.
+        */
+        tokenHolder = "0x96236adb640ec620a85898378375cedf03ca21ff";
+        await approveHost(tokenHolder);
+        var tokenAddress = "0x06012c8cf97BEaD5deAe237070F9587f8E7A266d";
+
+        var tokenList = ["1922505"];
+        var receivers = [accounts[1]];
+
+        var mainToken = new web3.eth.Contract(
+            knowledgeBase.IERC721ABI,
+            tokenAddress
+        );
+
+        await Promise.all(
+            tokenList.map(async(token, index) => {
+                await mainToken.methods
+                    .approve(tokenHolder, token)
+                    .send(blockchainConnection.getSendingOptions({ from: tokenHolder }));
+                await mainToken.methods
+                    .transferFrom(tokenHolder, accounts[1], token)
                     .send(blockchainConnection.getSendingOptions({ from: tokenHolder }));
                 await mainToken.methods
                     .approve(wrapper.options.address, token)
@@ -1166,7 +1327,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
 
         must fail: you cannot unwrap the original token.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -1273,7 +1434,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         -Unwrap the 721 burning 0,51
         -Wrap the 721, the minted amount must be 0,51.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -1289,6 +1450,132 @@ describe("itemv2 projections ERC721Wrapper", () => {
             tokenList.map(async(token, index) => {
                 await mainToken.methods
                     .safeTransferFrom(tokenHolder, accounts[1], token)
+                    .send(blockchainConnection.getSendingOptions({ from: tokenHolder }));
+                await mainToken.methods
+                    .approve(wrapper.options.address, token)
+                    .send(blockchainConnection.getSendingOptions({ from: accounts[1] }));
+            })
+        );
+
+        assert.equal(await mainToken.methods.balanceOf(accounts[1]).call(), "1");
+
+        var tx = await wrapperResource.mintItems721(
+            tokenList,
+            receivers,
+            accounts[1],
+            wrapper,
+            mainToken.options.address
+        );
+
+        var logs = (await web3.eth.getTransactionReceipt(tx.transactionHash)).logs;
+
+        var itemIds = logs
+            .filter(
+                (it) =>
+                it.topics[0] === web3.utils.sha3("Token(address,uint256,uint256)")
+            )
+            .map((it) => web3.eth.abi.decodeParameter("uint256", it.topics[3]));
+
+        assert.equal(await mainToken.methods.balanceOf(accounts[1]).call(), "0");
+
+        await wrapper.methods
+            .safeTransferFrom(
+                accounts[1],
+                accounts[2],
+                itemIds[0],
+                "490000000000000000",
+                "0x"
+            )
+            .send(blockchainConnection.getSendingOptions({ from: accounts[1] }));
+
+        assert.equal(
+            await wrapper.methods.balanceOf(accounts[1], itemIds[0]).call(),
+            "510000000000000000"
+        );
+
+        assert.equal(
+            await wrapper.methods.balanceOf(accounts[2], itemIds[0]).call(),
+            "490000000000000000"
+        );
+
+        var burn1 = web3.eth.abi.encodeParameters(
+            ["address", "uint256", "address", "bytes", "bool", "bool"], [
+                tokenAddress,
+                tokenList[0],
+                utilities.voidEthereumAddress,
+                "0x",
+                false,
+                false,
+            ]
+        );
+
+        await wrapperResource.burn721(
+            accounts[1],
+            accounts[1],
+            itemIds[0],
+            await wrapper.methods.balanceOf(accounts[1], itemIds[0]).call(),
+            burn1,
+            wrapper
+        );
+
+        assert.equal(await mainToken.methods.balanceOf(accounts[1]).call(), "1");
+
+        await mainToken.methods
+            .approve(wrapper.options.address, tokenList[0])
+            .send(blockchainConnection.getSendingOptions({ from: accounts[1] }));
+
+        var tx = await wrapperResource.mintItems721(
+            tokenList,
+            receivers,
+            accounts[1],
+            wrapper,
+            mainToken.options.address,
+            "510000000000000000"
+        );
+
+        assert.equal(
+            await wrapper.methods.balanceOf(accounts[1], itemIds[0]).call(),
+            "510000000000000000"
+        );
+
+        assert.equal(await mainToken.methods.balanceOf(accounts[1]).call(), "0");
+    });
+
+    it("#656 Scenario 3b Testing some different unwrap and rewrap scenarios with different balances", async() => {
+        /**
+        * Authorized subjects:
+        * Item holders
+        * Functions used in the test:
+        * mint
+        * safeTransferFrom
+        * Burn
+        cryptokitties
+
+        Scenario 3:
+        -Wrap a 721.
+        -transfer 0,49.
+        -Unwrap the 721 burning 0,51
+        -Wrap the 721, the minted amount must be 0,51.
+        */
+        tokenHolder = "0x96236adb640ec620a85898378375cedf03ca21ff";
+        await approveHost(tokenHolder);
+        var tokenAddress = "0x06012c8cf97BEaD5deAe237070F9587f8E7A266d";
+
+        var tokenList = ["1549027"];
+        var receivers = [accounts[1]];
+
+        var mainToken = new web3.eth.Contract(
+            knowledgeBase.IERC721ABI,
+            tokenAddress
+        );
+
+        await Promise.all(
+            tokenList.map(async(token, index) => {
+                await mainToken.methods
+                    .approve(tokenHolder, token)
+                    .send(blockchainConnection.getSendingOptions({ from: tokenHolder }));
+                await mainToken.methods
+                    .transferFrom(tokenHolder, accounts[1], token)
                     .send(blockchainConnection.getSendingOptions({ from: tokenHolder }));
                 await mainToken.methods
                     .approve(wrapper.options.address, token)
@@ -1396,7 +1683,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
 
         must fail: you cannot unwrap the original token.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -1522,7 +1809,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         Wrap the 721, the minted amount must be 1.
         */
 
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -1689,7 +1976,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         * safeTransferFrom
         * Burn
         * Burn Interoperable
-        cryptokitties
+        cyberKongz
 
         Scenario 1:
         -Wrap a 721.
@@ -1697,7 +1984,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         -Unwrap the 721 burning 0,6.
         -Wrap the 721, the minted amount must be 1.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -1808,14 +2095,14 @@ describe("itemv2 projections ERC721Wrapper", () => {
         * safeTransferFrom
         * Burn
         * Burn Interoperable
-        cryptokitties
+        cyberKongz
 
         Scenario 2:
         -Wrap a 721.
         -burn interoperable 0,5
         -must fail: you cannot unwrap the original token.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -1904,7 +2191,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         * safeTransferFrom
         * Burn
         * Burn Interoperable
-        cryptokitties
+        cyberKongz
 
         Scenario 3:
         -Wrap a 721.
@@ -1912,7 +2199,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         -Unwrap the 721 burning 0,7.
         -Wrap the 721, the minted amount must be 0,7.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 
@@ -2033,7 +2320,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         * safeTransferFrom
         * Burn
         * Burn Interoperable
-        cryptokitties
+        cyberKongz
 
         Scenario 4:
         -Wrap a 721.
@@ -2042,7 +2329,7 @@ describe("itemv2 projections ERC721Wrapper", () => {
         -The other address unwraps the 721 burning 0,6.
         -Wrap the 721, the minted amount must be 0,6.
         */
-        tokenHolder = "0x721931508df2764fd4f70c53da646cb8aed16ace";
+        tokenHolder = "0xfD113ce2c7d6fEE4A6Fa9a282aABfc32eCa5509c";
         await approveHost(tokenHolder);
         var tokenAddress = "0x57a204aa1042f6e66dd7730813f4024114d74f37";
 

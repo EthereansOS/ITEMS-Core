@@ -3,54 +3,78 @@
 pragma solidity >=0.7.0;
 pragma abicoder v2;
 
-import "./IERC721Wrapper.sol";
+import "./IERC721DeckWrapper.sol";
 import "../ItemProjection.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import { Uint256Utilities, TransferUtilities } from "@ethereansos/swissknife/contracts/lib/GeneralUtilities.sol";
 
-contract ERC721Wrapper is IERC721Wrapper, ItemProjection, IERC721Receiver {
+contract ERC721DeckWrapper is IERC721DeckWrapper, ItemProjection, IERC721Receiver {
     using AddressUtilities for address;
     using Uint256Utilities for uint256;
     using BytesUtilities for bytes;
     using TransferUtilities for address;
 
-    mapping(bytes32 => uint256) private _itemIdOf;
+    mapping(address => uint256) public override itemIdOf;
 
     mapping(uint256 => address) private _sourceTokenAddress;
-    mapping(uint256 => uint256) private _sourceTokenId;
+
+    uint256 public override reserveTimeInBlocks;
+
+    struct ReserveData {
+        address unwrapper;
+        uint256 timeout;
+    }
+
+    mapping(bytes32 => ReserveData) private _reserveData;
 
     constructor(bytes memory lazyInitData) ItemProjection(lazyInitData) {
     }
 
-    function itemIdOf(address tokenAddress, uint256 tokenId) override public view returns(uint256) {
-        return _itemIdOf[_toItemKey(tokenAddress, tokenId)];
+    function _projectionLazyInit(bytes memory collateralInitData) internal override returns (bytes memory) {
+        reserveTimeInBlocks = abi.decode(collateralInitData, (uint256));
+        return "";
     }
 
-    function source(uint256 itemId) external override view returns(address tokenAddress, uint256 tokenId) {
-        return (_sourceTokenAddress[itemId], _sourceTokenId[itemId]);
+    function reserveData(address tokenAddress, uint256 tokenId) external override view returns(address unwrapper, uint256 timeout) {
+        ReserveData memory data = _reserveData[_toReserveDataKey(tokenAddress, tokenId)];
+        unwrapper = data.unwrapper;
+        timeout = data.timeout;
+    }
+
+    function source(uint256 itemId) external override view returns(address tokenAddress) {
+        return (_sourceTokenAddress[itemId]);
     }
 
     function mintItems(CreateItem[] calldata createItemsInput) virtual override(Item, ItemProjection) public returns(uint256[] memory itemIds) {
-        CreateItem[] memory createItems = new CreateItem[](createItemsInput.length);
+        return mintItems(createItemsInput, new bool[](0));
+    }
+
+    function mintItems(CreateItem[] calldata createItemsInput, bool[] memory reserveArray) override public returns(uint256[] memory itemIds) {
+        require(createItemsInput.length > 0 && (reserveArray.length == 0 || createItemsInput.length == reserveArray.length), "input");
         uint256[] memory loadedItemIds = new uint256[](createItemsInput.length);
+        itemIds = new uint256[](createItemsInput.length);
         string memory uri = plainUri();
         for(uint256  i = 0; i < createItemsInput.length; i++) {
             address tokenAddress = address(uint160(uint256(createItemsInput[i].collectionId)));
             uint256 tokenId = createItemsInput[i].id;
             IERC721(tokenAddress).transferFrom(msg.sender, address(this), tokenId);
-            createItems[i] = _buildCreateItem(msg.sender, tokenAddress, createItemsInput[i].accounts, createItemsInput[i].amounts, loadedItemIds[i] = itemIdOf(tokenAddress, tokenId), uri);
         }
-        itemIds = IItemMainInterface(mainInterface).mintItems(createItems);
-        for(uint256 i = 0; i < createItemsInput.length; i++) {
-            if(loadedItemIds[i] == 0) {
-                address tokenAddress = address(uint160(uint256(createItemsInput[i].collectionId)));
-                uint256 tokenId = createItemsInput[i].id;
-                _itemIdOf[_toItemKey(tokenAddress, tokenId)] = itemIds[i];
-                _sourceTokenAddress[itemIds[i]] = tokenAddress;
-                _sourceTokenId[itemIds[i]] = tokenId;
-                emit Token(tokenAddress, tokenId, itemIds[i]);
+        for(uint256  i = 0; i < createItemsInput.length; i++) {
+            address tokenAddress = address(uint160(uint256(createItemsInput[i].collectionId)));
+            uint256 tokenId = createItemsInput[i].id;
+            CreateItem[] memory createItems = new CreateItem[](1);
+            createItems[0] = _buildCreateItem(msg.sender, tokenAddress, createItemsInput[i].accounts, createItemsInput[i].amounts, loadedItemIds[i] = itemIdOf[tokenAddress], uri);
+            if(i < reserveArray.length && reserveArray[i]) {
+                _reserveData[_toReserveDataKey(tokenAddress, tokenId)] = ReserveData(msg.sender, block.number + reserveTimeInBlocks);
             }
+            itemIds[i] = IItemMainInterface(mainInterface).mintItems(createItems)[0];
+            if(loadedItemIds[i] == 0) {
+                itemIdOf[tokenAddress] = itemIds[i];
+                _sourceTokenAddress[itemIds[i]] = tokenAddress;
+                loadedItemIds[i] = itemIds[i];
+            }
+            emit Token(tokenAddress, tokenId, loadedItemIds[i]);
         }
     }
 
@@ -75,51 +99,67 @@ contract ERC721Wrapper is IERC721Wrapper, ItemProjection, IERC721Receiver {
     ) override external returns (bytes4) {
         uint256[] memory values;
         address[] memory receivers;
+        bool reserve;
         if(data.length > 0) {
-            (values, receivers) = abi.decode(data, (uint256[], address[]));
+            (values, receivers, reserve) = abi.decode(data, (uint256[], address[], bool));
         }
-        uint256 itemId = itemIdOf(msg.sender, tokenId);
+        if(reserve) {
+            _reserveData[_toReserveDataKey(msg.sender, tokenId)] = ReserveData(from, block.number + reserveTimeInBlocks);
+        }
+        uint256 itemId = itemIdOf[msg.sender];
         CreateItem[] memory createItems = new CreateItem[](1);
         createItems[0] = _buildCreateItem(from, msg.sender, receivers, values, itemId, plainUri());
         uint256 createdItemId = IItemMainInterface(mainInterface).mintItems(createItems)[0];
         if(itemId == 0) {
-            _itemIdOf[_toItemKey(msg.sender, tokenId)] = createdItemId;
+            itemIdOf[msg.sender] = createdItemId;
             _sourceTokenAddress[createdItemId] = msg.sender;
-            _sourceTokenId[createdItemId] = tokenId;
-            emit Token(msg.sender, tokenId, createdItemId);
+            itemId = createdItemId;
         }
+        emit Token(msg.sender, tokenId, itemId);
         return this.onERC721Received.selector;
     }
 
     function burn(address account, uint256 itemId, uint256 amount, bytes memory data) override(Item, ItemProjection) public {
         require(account != address(0), "required account");
         uint256 amountToBurn = toInteroperableInterfaceAmount(amount, itemId, account);
-        require(amountToBurn >= (51*1e16), "Insufficient balance");
+        _unwrap(account, itemId, amountToBurn, data);
         IItemMainInterface(mainInterface).mintTransferOrBurn(false, abi.encode(msg.sender, account, address(0), itemId, amountToBurn));
         emit TransferSingle(msg.sender, account, address(0), itemId, amount);
-        _unwrap(account, itemId, data);
     }
 
     function burnBatch(address account, uint256[] calldata itemIds, uint256[] calldata amounts, bytes memory data) override(Item, ItemProjection) public {
         require(account != address(0), "required account");
-        uint256[] memory interoperableInterfaceAmounts = new uint256[](amounts.length);
-        for(uint256 i = 0 ; i < interoperableInterfaceAmounts.length; i++) {
-            interoperableInterfaceAmounts[i] = toInteroperableInterfaceAmount(amounts[i], itemIds[i], account);
-            require(interoperableInterfaceAmounts[i] >= (51*1e16), "Insufficient balance");
-        }
-        IItemMainInterface(mainInterface).mintTransferOrBurn(true, abi.encode(true, abi.encode(abi.encode(msg.sender, account, address(0), itemIds, interoperableInterfaceAmounts).asSingletonArray())));
-        emit TransferBatch(msg.sender, account, address(0), itemIds, amounts);
         bytes[] memory datas = abi.decode(data, (bytes[]));
-        for(uint256 i = 0; i < itemIds.length; i++) {
-            _unwrap(account, itemIds[i], datas[i]);
+        for(uint256 i = 0 ; i < datas.length; i++) {
+            uint256 itemId = itemIds[i];
+            uint256 amount = amounts[i];
+            uint256 amountToBurn = toInteroperableInterfaceAmount(amount, itemId, account);
+            _unwrap(account, itemId, amountToBurn, datas[i]);
+            IItemMainInterface(mainInterface).mintTransferOrBurn(false, abi.encode(msg.sender, account, address(0), itemId, amountToBurn));
+        }
+        emit TransferBatch(msg.sender, account, address(0), itemIds, amounts);
+    }
+
+    function unlockReserves(address[] calldata tokenAddresses, uint256[] calldata tokenIds) external override {
+        for(uint256 i = 0; i < tokenAddresses.length; i++) {
+            _verifyReserve(tokenAddresses[i], tokenIds[i], msg.sender);
         }
     }
 
-    function _unwrap(address from, uint256 itemId, bytes memory data) private {
+    function _unwrap(address from, uint256 itemId, uint256 amount, bytes memory data) private {
+        require(amount > 0, "zero");
         (address tokenAddress, uint256 tokenId, address receiver, bytes memory payload, bool safe, bool withData) = abi.decode(data, (address, uint256, address, bytes, bool, bool));
         receiver = receiver != address(0) ? receiver : from;
-        require(itemIdOf(tokenAddress, tokenId) == itemId, "Wrong ERC721");
+        require(itemIdOf[tokenAddress] == itemId, "Wrong ERC721");
         IERC721 token = IERC721(tokenAddress);
+        require(token.ownerOf(tokenId) == address(this), "Invalid Token ID");
+        _verifyReserve(tokenAddress, tokenId, from);
+        uint256 totalSupply = Item(mainInterface).totalSupply(itemId);
+        if(totalSupply > 1e18) {
+            require(amount == 1e18, "Invalid amount");
+        } else {
+            require(amount >= (51*1e16), "Invalid amount");
+        }
         if(!safe) {
             try token.transferFrom(address(this), receiver, tokenId) {
             } catch {
@@ -136,9 +176,10 @@ contract ERC721Wrapper is IERC721Wrapper, ItemProjection, IERC721Receiver {
 
     function _buildCreateItem(address from, address tokenAddress, address[] memory receivers, uint256[] memory values, uint256 itemId, string memory uri) private view returns(CreateItem memory) {
         (string memory name, string memory symbol) = itemId != 0 ? ("", "") : _tryRecoveryMetadata(tokenAddress);
-        name = itemId != 0 ? name : string(abi.encodePacked(name, " item"));
-        symbol = itemId != 0 ? symbol : string(abi.encodePacked("i", symbol));
-        uint256 supplyToMint = (1e18 - (itemId == 0 ? 0 : IItemMainInterface(mainInterface).totalSupply(itemId)));
+        name = itemId != 0 ? "" : string(abi.encodePacked(name, " Deck"));
+        symbol = itemId != 0 ? "" : string(abi.encodePacked("D-", symbol));
+        uint256 supplyToMint = itemId == 0 ? 0 : IItemMainInterface(mainInterface).totalSupply(itemId);
+        supplyToMint = 1e18 - (supplyToMint < 1e18 ? supplyToMint : 0);
         address[] memory accounts = receivers.length == 0 ? from.asSingletonArray() : receivers;
         uint256[] memory amounts = values.length == 0 ? supplyToMint.asSingletonArray() : values;
         require(accounts.length == amounts.length, "length");
@@ -169,7 +210,16 @@ contract ERC721Wrapper is IERC721Wrapper, ItemProjection, IERC721Receiver {
         }
     }
 
-    function _toItemKey(address tokenAddress, uint256 tokenId) private pure returns(bytes32) {
+    function _verifyReserve(address tokenAddress, uint256 tokenId, address from) private {
+        bytes32 reserveDataKey = _toReserveDataKey(tokenAddress, tokenId);
+        ReserveData memory reserveDataElement = _reserveData[reserveDataKey];
+        if(reserveDataElement.unwrapper != address(0)) {
+            require(reserveDataElement.unwrapper == from || block.number >= reserveDataElement.timeout, "Cannot unlock");
+            delete _reserveData[reserveDataKey];
+        }
+    }
+
+    function _toReserveDataKey(address tokenAddress, uint256 tokenId) private pure returns (bytes32) {
         return keccak256(abi.encodePacked(tokenAddress, tokenId));
     }
 }

@@ -1,23 +1,13 @@
-var BlockchainDouble = require('ganache-core/lib/blockchain_double');
-var to = require("ganache-core/lib/utils/to.js");
 var { BN } = require('ethereumjs-util');
 
-var regularTransactionTrace = BlockchainDouble.prototype.processTransactionTrace;
-BlockchainDouble.prototype.processTransactionTrace = async function processTransactionTrace(hash, params, callback) {
-    if(!params || !params.tracer) {
-        return regularTransactionTrace.apply(this, arguments);
-    }
-    var self = this;
-    var targetHash = to.hex(hash);
-    var txHashCurrentlyProcessing = "";
-    var vm;
+module.exports = async function(web3, transactionHash, tracerString, result) {
 
     var tracer;
     try {
-        tracer = Function(params.tracer)();
+        tracer = Function(tracerString)();
     } catch(e) {
         try {
-            tracer = Function("return " + params.tracer)();
+            tracer = Function("return " + tracerString)();
         } catch(ex) {
             callback(e);
         }
@@ -25,15 +15,45 @@ BlockchainDouble.prototype.processTransactionTrace = async function processTrans
 
     var logContracts = [];
     var firstContract;
+    var logCTX;
+
+    var transaction = (result && result[0]) || await web3.eth.getTransaction(transactionHash);
+
+    var transactionReceipt = (result && result[1]) || await web3.eth.getTransactionReceipt(transactionHash);
+
+    var receipt = { ...transactionReceipt, ...transaction };
+
+    var contractCaller = receipt.from;
+    var contractAddress = receipt.contractAddress || receipt.to;
+    var contractValue = parseInt(receipt.value || '0');
+    var contractInput = receipt.input.substring(2);
+    logContracts.unshift(firstContract = {
+        getCaller : () => contractCaller,
+        getAddress : () => contractAddress,
+        getValue : () => contractValue,
+        getInput : () => contractInput
+    });
+    logCTX = {
+        type : receipt.contractAddress ? 'CREATE' : 'CALL',
+        from : contractCaller,
+        to : contractAddress,
+        input : contractInput,
+        gas : new BN(receipt.gas).toString(),
+        value : contractValue,
+        block : new BN(receipt.blockNumber).toString(),
+        output : [],
+        gasUsed : new BN(receipt.gasUsed).toString(),
+        time : new Date().getTime()
+    };
 
     var logContractsEditor = {
         CALL(log) {
             var contractCaller = log.contract.getAddress();
             var stackLength = log.stack.length();
-            var contractAddress = to.hex(log.stack.peek(stackLength - 2));
+            var contractAddress = log.stack.peek(stackLength - 2);
             var contractValue = log.stack.peek(stackLength - 3);
-            var inputStart = to.number(log.stack.peek(stackLength - 4));
-            var inputStop = inputStart + to.number(log.stack.peek(stackLength - 5));
+            var inputStart = parseInt("0x" + (log.stack.peek(stackLength - 4)));
+            var inputStop = inputStart + parseInt("0x" + (log.stack.peek(stackLength - 5)));
             var contractInput = log.memory.slice(inputStart, inputStop);
             logContracts.unshift({
                 getCaller : () => contractCaller,
@@ -48,10 +68,10 @@ BlockchainDouble.prototype.processTransactionTrace = async function processTrans
         STATICCALL(log) {
             var contractCaller = log.contract.getAddress();
             var stackLength = log.stack.length();
-            var contractAddress = to.hex(log.stack.peek(stackLength - 2));
-            var contractValue = new BN(0);
-            var inputStart = to.number(log.stack.peek(stackLength - 3));
-            var inputStop = inputStart + to.number(log.stack.peek(stackLength - 4));
+            var contractAddress = log.stack.peek(stackLength - 2);
+            var contractValue = 0
+            var inputStart = parseInt("0x" + (log.stack.peek(stackLength - 3).toString('hex')));
+            var inputStop = inputStart + parseInt("0x" + (log.stack.peek(stackLength - 4).toString('hex')));
             var contractInput = log.memory.slice(inputStart, inputStop);
             logContracts.unshift({
                 getCaller : () => contractCaller,
@@ -75,51 +95,33 @@ BlockchainDouble.prototype.processTransactionTrace = async function processTrans
         RETURN(log) {
             this.STOP();
             var stackLength = log.stack.length();
-            var returnStart = to.number(log.stack.peek(stackLength - 1));
-            var returnStop = to.number(log.stack.peek(stackLength - 2));
+            var returnStart = parseInt("0x" + (log.stack.peek(stackLength - 1).toString('hex')));
+            var returnStop = parseInt("0x" + (log.stack.peek(stackLength - 2).toString('hex')));
             logCTX.output = log.memory.slice(returnStart, returnStart + returnStop);
         }
     };
 
-    var logCTX;
-
     var logDB = {
         getBalance(address) {
-            return new Promise(function(ok, ko) {
-                return self.getBalance(address, function(err, result) {
-                    return err ? ko(err) : ok(result)
-                });
-            });
+            return web3.eth.getBalance(address);
         },
         getNonce(address) {
-            return new Promise(function(ok, ko) {
-                return self.getNonce(address, function(err, result) {
-                    return err ? ko(err) : ok(to.number(result))
-                });
-            });
+            return web3.eth.getTransactionCount(address);
         },
         getCode(address) {
-            return new Promise(function(ok, ko) {
-                return self.getCode(address, function(err, result) {
-                    return err ? ko(err) : ok(result)
-                });
-            });
+            return web3.eth.getCode(address);
         },
         getState(address, hash) {
-            return new Promise(function(ok, ko) {
-                return self.getState(address, hash, function(err, result) {
-                    return err ? ko(err) : ok(to.hex(result))
-                });
-            });
+            return web3.eth.getStorageAt(address, hash);
         },
         exists(address) {
             var _this = this;
             return new Promise(async function(ok, ko) {
                 try {
-                    if(to.number(await _this.getBalance(address)) > 0) {
+                    if(new BN(await _this.getBalance(address)) > 0) {
                         return ok(true);
                     }
-                    if(to.number(await _this.getNonce(address)) > 0) {
+                    if(new BN(await _this.getNonce(address)) > 0) {
                         return ok(true);
                     }
                     if((await _this.getCode(address)).length > 0) {
@@ -133,7 +135,7 @@ BlockchainDouble.prototype.processTransactionTrace = async function processTrans
         }
     }
 
-    function stepListener(event, next) {
+    function step(event) {
 
         var logObject = {
             op : {
@@ -143,10 +145,14 @@ BlockchainDouble.prototype.processTransactionTrace = async function processTrans
             },
             memory : {
                 slice : (start, stop) => {
-                    return event.memory.slice(start, stop).map(it => {
+                    var sliced = event.memory.slice(start, stop);
+                    var result = [];
+                    for(var it of sliced) {
                         var x = new BN(it).toString('hex');
-                        return x.length === 0 ? '00' : x.length === 1 ? ('0' + x) : x;
-                    });
+                        var converted = x.length === 0 ? '00' : x.length === 1 ? ('0' + x) : x;
+                        result.push(converted);
+                    }
+                    return result;
                 },
                 getUint : offset => new BN(event.memory[offset]).toString('hex')
             },
@@ -156,128 +162,62 @@ BlockchainDouble.prototype.processTransactionTrace = async function processTrans
             },
             contract : logContracts[0] || firstContract,
             getPC : () => event.pc,
-            getGas : () => to.number(event.gasLeft),
+            getGas : () => new BN(event.gasLeft).toString(),
             getCost : () => event.opcode.fee,
             getRefund : () => event.refund || 0,
             getError : () => event.error || undefined
         };
 
-        try {
-            tracer.step && tracer.step.apply(tracer, [logObject, logDB]);
-            logContractsEditor[event.opcode.name] && logContractsEditor[event.opcode.name](logObject);
-            logObject.contract = logContracts[0];
-        } catch(e) {
-            return next(e);
-        }
-
-        next();
+        tracer.step && tracer.step.apply(tracer, [logObject, logDB]);
+        logContractsEditor[event.opcode.name] && logContractsEditor[event.opcode.name](logObject);
+        logObject.contract = logContracts[0];
     }
 
-    this.getTransactionReceipt(targetHash, function(err, receipt) {
-        if (err) {
-            return callback(err);
+    return await new Promise(async function(ok, ko) {
+        var _context;
+        var firstStepDone = false;
+        function before(event) {
+            web3.currentProvider.off("ganache:vm:tx:before", before);
+            _context = _context || event.context;
         }
-
-        if (!receipt) {
-            return callback(new Error("Unknown transaction " + targetHash));
-        }
-
-        try {
-            var contractCaller = to.hex(receipt.tx.from);
-            var contractAddress = receipt.contractAddress || to.hex(receipt.tx.to);
-            var contractValue = parseInt("0x" + receipt.tx.value.toString('hex'));
-            var contractInput = receipt.tx.input;
-            logContracts.unshift(firstContract = {
-                getCaller : () => contractCaller,
-                getAddress : () => contractAddress,
-                getValue : () => contractValue,
-                getInput : () => contractInput
-            });
-            logCTX = {
-                type : receipt.contractAddress ? 'CREATE' : 'CALL',
-                from : contractCaller,
-                to : contractAddress,
-                input : contractInput,
-                gas : to.number(receipt.tx.gas),
-                value : contractValue,
-                block : to.number(receipt.block.header.number),
-                output : [],
-                gasUsed : to.number(receipt.gasUsed),
-                time : new Date().getTime()
-            };
-        } catch(e) {
-            console.error(e);
-        }
-
-        var targetBlock = receipt.block;
-
-        self.getBlock(targetBlock.header.parentHash, function(err, parent) {
-            if (err) {
-                return callback(err);
+        function internalStep(event) {
+            if(event.context !== _context) {
+                return;
             }
-
-            var stateTrie = self.createStateTrie(self.data.trie_db, parent.header.stateRoot, {
-                forkBlockNumber: to.number(parent.header.number)
-            });
-            vm = self.createVMFromStateTrie(stateTrie);
-
-            self.createBlock(parent, false, function(err, block) {
-                if (err) {
-                    return callback(err);
-                }
-
-                block.header.timestamp = targetBlock.header.timestamp;
-
-                for (var i = 0; i < targetBlock.transactions.length; i++) {
-                    var tx = targetBlock.transactions[i];
-                    block.transactions.push(tx);
-
-                    if (to.hex(tx.hash()) === targetHash) {
-                        break;
-                    }
-                }
-
-                function beforeTxListener(tx) {
-                    txCurrentlyProcessing = tx;
-                    txHashCurrentlyProcessing = to.hex(tx.hash());
-                    if (txHashCurrentlyProcessing === targetHash) {
-                        vm.on("step", stepListener);
-                    }
-                }
-
-                function afterTxListener() {
-                    if (txHashCurrentlyProcessing === targetHash) {
-                        removeListeners();
-                    }
-                }
-
-                function removeListeners() {
-                    vm.removeListener("step", stepListener);
-                    vm.removeListener("beforeTx", beforeTxListener);
-                    vm.removeListener("afterTx", afterTxListener);
-                }
-
-                vm.on("beforeTx", beforeTxListener);
-                vm.on("afterTx", afterTxListener);
-
-                vm.stateManager._cache.flush = (cb) => cb();
-
-                self.processBlock(vm, block, false, function(err) {
-                    if (err && (err.message.indexOf("VM Exception") === 0 || err.message.indexOf("Cannot get state root with uncommitted checkpoints") !== -1)) {
-                        err = null;
-                    }
-                    removeListeners();
-                    logCTX.time = ((new Date().getTime() - logCTX.time) / 1000) + '';
-                    if(err) {
-                        return callback(err);
-                    }
-                    try {
-                        return callback(err, (tracer.result && tracer.result.apply(tracer, [logCTX, logDB])) || null);
-                    } catch(e) {
-                        return callback(e);
-                    }
+            firstStepDone = true;
+            try {
+                step(event.data);
+            } catch(e) {
+                console.error(e);
+                return ko(e);
+            }
+        }
+        web3.currentProvider.on("ganache:vm:tx:before", before);
+        web3.currentProvider.on("ganache:vm:tx:step", internalStep);
+        await web3.currentProvider.sendAsync({
+            "id": new Date().getTime(),
+            "jsonrpc": "2.0",
+            "method": "debug_traceTransaction",
+            "params": [transactionHash, {
+                disableStorage : true,
+                disableMemory : true,
+                disableStack : true
+            }]
+        }, function(err) {
+            web3.currentProvider.off("ganache:vm:tx:step", internalStep);
+            logCTX.time = ((new Date().getTime() - logCTX.time) / 1000) + '';
+            if(err) {
+                return ko(err);
+            }
+            try {
+                (!firstStepDone || !_context) && internalStep({
+                    context : (_context = _context || {}),
+                    data : {opcode : {name : 'FAKE_INIT'}}
                 });
-            });
-        });
+                return ok([(tracer.result && tracer.result.apply(tracer, [logCTX, logDB])) || null, transaction, transactionReceipt]);
+            } catch(e) {
+                return ko(e);
+            }
+        })
     });
 };

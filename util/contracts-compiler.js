@@ -15,14 +15,17 @@ async function main() {
     var cache = {};
     for(var i in files) {
         var file = files[i = parseInt(i)];
-        var name = file.substring(file.lastIndexOf("/") + 1).split(".sol").join("") + "ABI";
-        if(cache[name]) {
-            continue;
-        }
         try {
-            var Contract = await compile(file);
-            abis.push(`\n    "${name}": ${JSON.stringify(cache[name] = Contract.abi)}`);
-            Contract.bin !== '0x' && bins.push(`\n    "${name.substring(0, name.length - 3) + 'BIN'}": "${Contract.bin}"`);
+            var Contracts = await compile(file);
+            Contracts = (Contracts.abi ? [Contracts] : Object.values(Contracts)).filter(it => it.abi && it.abi.length > 0)
+            for(var Contract of Contracts) {
+                var name = Contract.contractName + 'ABI'
+                if(cache[name]) {
+                    continue;
+                }
+                abis.push(`\n    "${name}": ${JSON.stringify(cache[name] = Contract.abi)}`);
+                Contract.bin !== '0x' && bins.push(`\n    "${name.substring(0, name.length - 3) + 'BIN'}": "${Contract.bin}"`);
+            }
         } catch(e) {
         }
     }

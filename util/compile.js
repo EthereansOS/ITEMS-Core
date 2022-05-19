@@ -3,6 +3,7 @@ var os = require('os');
 var fs = require("fs");
 var solidityManager = require('solc-vm/solc-manager');
 var solidityDownloader = require('solc-vm/solc-downloader');
+var parser = require('@solidity-parser/parser');
 var glob = require("glob");
 var { spawn } = require('child_process');
 
@@ -102,9 +103,16 @@ module.exports = async function compile(file, contractName, solidityVersion) {
         child.on('close', async function () {
             var output;
             try {
-                output = (await parseOutput(stdout))[location][contractName];
+                output = (await parseOutput(stdout))[location];
+                output = (output && output[contractName]) || output;
             } catch(e) {
             }
+
+            try{
+                output && (output.parsed = parser.parse(fs.readFileSync(location, 'UTF-8')));
+            } catch(e) {
+            }
+
             try {
                 removeAtEnd && fs.unlinkSync(location);
             } catch(e) {

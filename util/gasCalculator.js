@@ -39,7 +39,7 @@ function numberToString(num, locale) {
 module.exports = function calculate() {
     return new Promise(function(ok) {
         var backup = function backup() {
-            return ok("2000000000");
+            return ok(null);
         }
         request.get(url, res => {
             res.setEncoding("utf8");
