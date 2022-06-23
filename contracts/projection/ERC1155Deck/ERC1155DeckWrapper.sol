@@ -8,6 +8,7 @@ import "../ItemProjection.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { Uint256Utilities, StringUtilities } from "@ethereansos/swissknife/contracts/lib/GeneralUtilities.sol";
+import "@ethereansos/swissknife/contracts/environment/ethereum/BlockRetriever.sol";
 
 struct ReserveDataEntry {
     address unwrapper;
@@ -21,14 +22,14 @@ library ERC1155DeckWrapperUtilities {
 
     event ReserveData(address from, address indexed tokenAddress, uint256 indexed tokenId, uint256 amount, uint256 timeout, bytes32 indexed reserveDataKey);
 
-    function buildCreateItem(mapping(bytes32 => ReserveDataEntry) storage _reserveData, address from, address tokenAddress, uint256 tokenId, uint256 amount, uint256 td, uint256 itemId, bytes memory data) external returns(CreateItem memory createItem, uint256 tokenDecimals) {
+    function buildCreateItem(mapping(bytes32 => ReserveDataEntry) storage _reserveData, address from, address tokenAddress, uint256 tokenId, uint256 amount, uint256 td, uint256 itemId, uint256 blockNumber, bytes memory data) external returns(CreateItem memory createItem, uint256 tokenDecimals) {
 
         tokenDecimals = itemId != 0 ? td : _safeDecimals(tokenAddress, tokenId);
 
         bool reserve;
         (data, reserve) = _extractAndElaborateValues(from, tokenAddress, amount, tokenDecimals, itemId, data);
 
-        _reserve(_reserveData, reserve, from, tokenAddress, tokenId, amount, data);
+        _reserve(_reserveData, reserve, from, tokenAddress, tokenId, amount, blockNumber, data);
 
         createItem = _finalizeCreation(tokenAddress, tokenId, itemId, data);
     }
@@ -60,14 +61,14 @@ library ERC1155DeckWrapperUtilities {
         require(tokenDecimals == 18 || totalSupply > 1e18 || isUnity, "balance");
     }
 
-    function _reserve(mapping(bytes32 => ReserveDataEntry) storage _reserveData, bool reserve, address from, address tokenAddress, uint256 tokenId, uint256 amount, bytes memory data) private {
+    function _reserve(mapping(bytes32 => ReserveDataEntry) storage _reserveData, bool reserve, address from, address tokenAddress, uint256 tokenId, uint256 amount, uint256 blockNumber, bytes memory data) private {
         require(amount > 0, "amount");
         if(reserve) {
             (data,,) = abi.decode(data, (bytes, address[], uint256[]));
             (,, uint256 reserveTimeInBlocks) = abi.decode(data, (bytes32, string, uint256));
             bytes32 reserveDataKey = _toReserveDataKey(from, tokenAddress, tokenId, amount);
             require(_reserveData[reserveDataKey].timeout == 0, 'already reserved');
-            uint256 timeout = block.number + reserveTimeInBlocks;
+            uint256 timeout = blockNumber + reserveTimeInBlocks;
             _reserveData[reserveDataKey] = ReserveDataEntry(from, timeout, amount);
             emit ReserveData(from, tokenAddress, tokenId, amount, timeout, reserveDataKey);
         } else {
@@ -155,7 +156,7 @@ library ERC1155DeckWrapperUtilities {
     }
 }
 
-contract ERC1155DeckWrapper is IERC1155DeckWrapper, ItemProjection, IERC1155Receiver {
+contract ERC1155DeckWrapper is IERC1155DeckWrapper, ItemProjection, IERC1155Receiver, BlockRetriever {
     using AddressUtilities for address;
     using Uint256Utilities for uint256;
     using Uint256Utilities for uint256[];
@@ -235,7 +236,8 @@ contract ERC1155DeckWrapper is IERC1155DeckWrapper, ItemProjection, IERC1155Rece
 
     function _buildCreateItem(address from, address tokenAddress, uint256 tokenId, uint256 value, bytes memory encodedData, uint256 itemId, string memory uri) private returns (CreateItem memory, uint256) {
         require(_sourceTokenAddress[tokenId] == address(0) && _sourceTokenKey[tokenId] == bytes32(0), "invalid");
-        return ERC1155DeckWrapperUtilities.buildCreateItem(reserveData, from, tokenAddress, tokenId, value, _tokenDecimals[itemId], itemId, abi.encode(mainInterface, abi.encode(collectionId, uri, reserveTimeInBlocks), encodedData));
+        bytes memory data = abi.encode(mainInterface, abi.encode(collectionId, uri, reserveTimeInBlocks), encodedData);
+        return ERC1155DeckWrapperUtilities.buildCreateItem(reserveData, from, tokenAddress, tokenId, value, _tokenDecimals[itemId], itemId, _blockNumber(), data);
     }
 
     function setHeader(Header calldata value) authorizedOnly override(IItemProjection, ItemProjection) external virtual returns(Header memory oldValue) {
@@ -367,7 +369,7 @@ contract ERC1155DeckWrapper is IERC1155DeckWrapper, ItemProjection, IERC1155Rece
             ReserveDataEntry memory reserveDataElement = reserveData[reserveDataKey];
             if(reserveDataElement.unwrapper != address(0)) {
                 require(reserveDataKey == keccak256(abi.encodePacked(reserveDataElement.unwrapper, tokenAddress, tokenId, reserveDataElement.amount)), "invalid reserve");
-                require(reserveDataElement.unwrapper == from || block.number >= reserveDataElement.timeout, "Cannot unlock");
+                require(reserveDataElement.unwrapper == from || _blockNumber() >= reserveDataElement.timeout, "Cannot unlock");
                 totalAvailable.amount += reserveDataElement.amount;
                 emit ReserveDataUnlocked(from, reserveDataKey, tokenAddress, tokenId, reserveDataElement.unwrapper, reserveDataElement.amount, reserveDataElement.timeout);
                 delete reserveData[reserveDataKey];

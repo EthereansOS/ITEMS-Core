@@ -30,19 +30,15 @@ contract ItemMainInterface is IItemMainInterface {
     mapping(bytes32 => mapping(uint256 => uint256)) private _batchAmounts;
     bytes32[] private _batchKeys;
 
-    constructor(string memory _plainUri, address _dynamicUriResolver, bytes memory _interoperableInterfaceModel, bytes memory itemMainInterfaceSupportsInterfaceImplementerData) {
+    constructor(string memory _plainUri, address _dynamicUriResolver, address _interoperableInterfaceModel, address __itemMainInterfaceSupportsInterface) {
         plainUri = _plainUri;
         dynamicUriResolver = _dynamicUriResolver;
-        address created;
-        assembly {
-            created := create(0, add(_interoperableInterfaceModel, 0x20), mload(_interoperableInterfaceModel))
-        }
-        interoperableInterfaceModel = created;
-        created = address(0);
-        assembly {
-            created := create(0, add(itemMainInterfaceSupportsInterfaceImplementerData, 0x20), mload(itemMainInterfaceSupportsInterfaceImplementerData))
-        }
-        _itemMainInterfaceSupportsInterfaceImplementer = created;
+        interoperableInterfaceModel = _interoperableInterfaceModel;
+        _itemMainInterfaceSupportsInterfaceImplementer = __itemMainInterfaceSupportsInterface;
+    }
+
+    function init() external {
+        require(hostInitializer == address(0));
         hostInitializer = msg.sender;
     }
 
@@ -424,7 +420,7 @@ contract ItemMainInterface is IItemMainInterface {
             for(uint256 z = 3; z < items.length; z++) {
                 amounts[inc] = _batchAmounts[key][itemIds[inc] = items[z]];
                 delete items[z];
-                delete _batchAmounts[key][inc++];
+                delete _batchAmounts[key][itemIds[inc++]];
             }
             emit TransferBatch(operator, sender, receiver, itemIds, amounts);
             delete _batchItems[key];

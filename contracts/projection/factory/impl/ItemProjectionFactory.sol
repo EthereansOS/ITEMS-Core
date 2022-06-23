@@ -6,6 +6,10 @@ pragma abicoder v2;
 import "../model/IItemProjectionFactory.sol";
 import "@ethereansos/swissknife/contracts/factory/impl/Factory.sol";
 
+interface IMainIniterfaceMini {
+    function init() external;
+}
+
 contract ItemProjectionFactory is Factory, IItemProjectionFactory {
     using ReflectionUtilities for address;
 
@@ -18,12 +22,8 @@ contract ItemProjectionFactory is Factory, IItemProjectionFactory {
 
     function _factoryLazyInit(bytes memory lazyInitData) internal override returns(bytes memory lazyInitResponse) {
         bytes[] memory modelCodes;
-        (lazyInitResponse, modelCodes) = abi.decode(lazyInitData, (bytes, bytes[]));
-        address _mainInterface;
-        assembly {
-            _mainInterface := create(0, add(lazyInitResponse, 0x20), mload(lazyInitResponse))
-        }
-        mainInterface = _mainInterface;
+        (mainInterface, modelCodes) = abi.decode(lazyInitData, (address, bytes[]));
+        IMainIniterfaceMini(mainInterface).init();
         for(uint256 i = 0; i < modelCodes.length; i++) {
             bytes memory code = modelCodes[i];
             address createdModel;
@@ -41,10 +41,24 @@ contract ItemProjectionFactory is Factory, IItemProjectionFactory {
     }
 
     function addModel(bytes memory code) external override authorizedOnly returns(address modelAddress, uint256 positionIndex) {
-        positionIndex = _models.length;
-        assembly {
-            modelAddress := create(0, add(code, 0x20), mload(code))
+        if(code.length == 32) {
+            modelAddress = abi.decode(code, (address));
+        } else if(code.length == 20) {
+            assembly {
+                modelAddress := div(mload(add(code, 32)), 0x1000000000000000000000000)
+            }
+        } else {
+            assembly {
+                modelAddress := create(0, add(code, 32), mload(code))
+            }
         }
+        require(modelAddress != address(0), "model");
+        uint256 codeSize;
+        assembly {
+            codeSize := extcodesize(modelAddress)
+        }
+        require(codeSize > 0, "model");
+        positionIndex = _models.length;
         _models.push(modelAddress);
     }
 

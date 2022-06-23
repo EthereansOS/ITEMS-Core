@@ -8,8 +8,9 @@ import "../ItemProjection.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import { Uint256Utilities, TransferUtilities } from "@ethereansos/swissknife/contracts/lib/GeneralUtilities.sol";
+import "@ethereansos/swissknife/contracts/environment/ethereum/BlockRetriever.sol";
 
-contract ERC721DeckWrapper is IERC721DeckWrapper, ItemProjection, IERC721Receiver {
+contract ERC721DeckWrapper is IERC721DeckWrapper, ItemProjection, IERC721Receiver, BlockRetriever {
     using AddressUtilities for address;
     using Uint256Utilities for uint256;
     using BytesUtilities for bytes;
@@ -66,7 +67,7 @@ contract ERC721DeckWrapper is IERC721DeckWrapper, ItemProjection, IERC721Receive
             CreateItem[] memory createItems = new CreateItem[](1);
             createItems[0] = _buildCreateItem(msg.sender, tokenAddress, createItemsInput[i].accounts, createItemsInput[i].amounts, loadedItemIds[i] = itemIdOf[tokenAddress], uri);
             if(i < reserveArray.length && reserveArray[i]) {
-                _reserveData[_toReserveDataKey(tokenAddress, tokenId)] = ReserveData(msg.sender, block.number + reserveTimeInBlocks);
+                _reserveData[_toReserveDataKey(tokenAddress, tokenId)] = ReserveData(msg.sender, _blockNumber() + reserveTimeInBlocks);
             }
             itemIds[i] = IItemMainInterface(mainInterface).mintItems(createItems)[0];
             if(loadedItemIds[i] == 0) {
@@ -104,7 +105,7 @@ contract ERC721DeckWrapper is IERC721DeckWrapper, ItemProjection, IERC721Receive
             (values, receivers, reserve) = abi.decode(data, (uint256[], address[], bool));
         }
         if(reserve) {
-            _reserveData[_toReserveDataKey(msg.sender, tokenId)] = ReserveData(from, block.number + reserveTimeInBlocks);
+            _reserveData[_toReserveDataKey(msg.sender, tokenId)] = ReserveData(from, _blockNumber() + reserveTimeInBlocks);
         }
         uint256 itemId = itemIdOf[msg.sender];
         CreateItem[] memory createItems = new CreateItem[](1);
@@ -214,7 +215,7 @@ contract ERC721DeckWrapper is IERC721DeckWrapper, ItemProjection, IERC721Receive
         bytes32 reserveDataKey = _toReserveDataKey(tokenAddress, tokenId);
         ReserveData memory reserveDataElement = _reserveData[reserveDataKey];
         if(reserveDataElement.unwrapper != address(0)) {
-            require(reserveDataElement.unwrapper == from || block.number >= reserveDataElement.timeout, "Cannot unlock");
+            require(reserveDataElement.unwrapper == from || _blockNumber() >= reserveDataElement.timeout, "Cannot unlock");
             delete _reserveData[reserveDataKey];
         }
     }

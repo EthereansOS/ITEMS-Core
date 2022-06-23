@@ -9,7 +9,7 @@ var { spawn } = require('child_process');
 
 var baseLocation = path.resolve(__dirname, "..", "contracts").split("\\").join("/");
 
-async function parseOutput(text) {
+function parseOutput(text) {
     var json = JSON.parse(text);
     var output = {};
     for(var entry of Object.entries(json.contracts)) {
@@ -103,7 +103,8 @@ module.exports = async function compile(file, contractName, solidityVersion) {
         child.on('close', async function () {
             var output;
             try {
-                output = (await parseOutput(stdout))[location];
+                output = parseOutput(stdout);
+                output = output[location] || output[location.substring(2)] || output[location.split(path.resolve(baseLocation, '..').split('\\').join('/')).join('').substring(1)];
                 output = (output && output[contractName]) || output;
             } catch(e) {
             }

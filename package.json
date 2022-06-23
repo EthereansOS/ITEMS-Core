@@ -11,7 +11,7 @@
     "build": "yarn flat && yarn compile",
     "test": "mocha",
     "server": "node util/server.js",
-    "cli-compiler": "node util/cli-compiler.js projection/ERC1155/ERC1155Wrapper"
+    "cli-compiler": "node util/cli-compiler.js environment/optimism/projection/ERC1155Deck/ERC1155DeckWrapper"
   },
   "config": {
     "solidityVersion": "0.8.6"
