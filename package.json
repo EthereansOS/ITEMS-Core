@@ -4,14 +4,7 @@
   "description": "Items v2 Core by the EthereansOS Team",
   "main": "",
   "scripts": {
-    "postinstall": "cross-var solc-vm install $npm_package_config_solidityVersion",
-    "flat": "node util/contracts-flattener.js",
-    "compile": "node util/contracts-compiler.js",
-    "abi": "node util/contracts-compiler.js nobin",
-    "build": "yarn flat && yarn compile",
-    "test": "mocha",
-    "server": "node util/server.js",
-    "cli-compiler": "node util/cli-compiler.js environment/optimism/projection/ERC1155Deck/ERC1155DeckWrapper"
+    "test": "mocha"
   },
   "config": {
     "solidityVersion": "0.8.6"
